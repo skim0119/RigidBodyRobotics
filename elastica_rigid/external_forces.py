@@ -5,6 +5,11 @@ from numba import njit
 from elastica.external_forces import NoForces
 
 
+# -----------------------------------------------------------------------------
+# Numba free-functions (used by class methods below)
+# -----------------------------------------------------------------------------
+
+
 @njit(cache=True)  # type: ignore
 def compute_wheel_forces_to_external(
     direction: NDArray[np.float64],
@@ -35,6 +40,206 @@ def compute_wheel_forces_to_external(
 
     external_forces += director @ (left_wheel_force + right_wheel_force)
     external_torques += (track_width / 2) * (-left_wheel_force + right_wheel_force)
+
+
+@njit(cache=True)  # type: ignore
+def compute_potential_field_wheel_forces(
+    x: NDArray[np.float64],
+    d1: NDArray[np.float64],
+    K: np.float64,
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    """u = -K * (x · d1); return left_wheel_force, right_wheel_force both [u, 0]."""
+    u = -K * (x[0] * d1[0] + x[1] * d1[1])
+    left = np.array([u, np.float64(0.0)])
+    right = np.array([u, np.float64(0.0)])
+    return left, right
+
+
+@njit(cache=True)  # type: ignore
+def interp_piecewise_linear(
+    t: np.float64,
+    times: NDArray[np.float64],
+    values: NDArray[np.float64],
+) -> np.float64:
+    """Piecewise-linear interpolation; extrapolate with first/last value."""
+    if t <= times[0]:
+        return values[0]
+    if t >= times[-1]:
+        return values[-1]
+    i = int(np.searchsorted(times, t, side="right") - 1)
+    j = i + 1
+    t0, t1 = times[i], times[j]
+    v0, v1 = values[i], values[j]
+    if t1 == t0:
+        return v1
+    s = (t - t0) / (t1 - t0)
+    return v0 + (v1 - v0) * s
+
+
+@njit(cache=True)  # type: ignore
+def closest_point_on_aabb(
+    p: NDArray[np.float64],
+    mins: NDArray[np.float64],
+    maxs: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Closest point on axis-aligned box to p."""
+    return np.minimum(np.maximum(p, mins), maxs)
+
+
+@njit(cache=True)  # type: ignore
+def contact_force_circle_vs_aabb(
+    center: NDArray[np.float64],
+    radius: np.float64,
+    mins: NDArray[np.float64],
+    maxs: NDArray[np.float64],
+    stiffness: np.float64,
+    eps: np.float64,
+) -> NDArray[np.float64]:
+    """
+    Penalty contact force between a circle and an axis-aligned rectangle.
+    Returns a force (2,) pushing the circle center away from the rectangle.
+    """
+    closest = closest_point_on_aabb(center, mins, maxs)
+    d = center - closest
+    dist_sq = d[0] * d[0] + d[1] * d[1]
+    dist = np.sqrt(dist_sq)
+
+    if dist >= radius:
+        return np.zeros(2, dtype=np.float64)
+
+    if dist > eps:
+        n = d / dist
+        penetration = radius - dist
+        return stiffness * penetration * n
+
+    # Center inside rectangle: push out via nearest face
+    dx_left = center[0] - mins[0]
+    dx_right = maxs[0] - center[0]
+    dy_bottom = center[1] - mins[1]
+    dy_top = maxs[1] - center[1]
+    dists = np.array([dx_left, dx_right, dy_bottom, dy_top], dtype=np.float64)
+    idx = np.argmin(dists)
+    min_dist = dists[idx]
+
+    n = np.zeros(2, dtype=np.float64)
+    if idx == 0:
+        n[0], n[1] = -1.0, 0.0
+    elif idx == 1:
+        n[0], n[1] = 1.0, 0.0
+    elif idx == 2:
+        n[0], n[1] = 0.0, -1.0
+    else:
+        n[0], n[1] = 0.0, 1.0
+
+    penetration = radius + min_dist
+    return stiffness * penetration * n
+
+
+@njit(cache=True)  # type: ignore
+def wheel_velocity_2d(
+    v: NDArray[np.float64],
+    omega: np.float64,
+    d1: NDArray[np.float64],
+    half_width: np.float64,
+    sign_d1: np.float64,
+) -> NDArray[np.float64]:
+    """Velocity at wheel contact: v + omega * sign_d1 * d1 * half_width."""
+    out = np.empty(2, dtype=np.float64)
+    out[0] = v[0] + omega * sign_d1 * d1[0] * half_width
+    out[1] = v[1] + omega * sign_d1 * d1[1] * half_width
+    return out
+
+
+@njit(cache=True)  # type: ignore
+def point_in_friction_region(
+    x: NDArray[np.float64],
+    fric_a: np.float64,
+    fric_b: np.float64,
+) -> bool:
+    """True if y >= a*x + b (shaded region)."""
+    return x[1] >= fric_a * x[0] + fric_b
+
+
+@njit(cache=True)  # type: ignore
+def compute_friction_force_mag_dir(
+    v: NDArray[np.float64],
+    speed: np.float64,
+    mu_f: np.float64,
+    mass: np.float64,
+    fric_eps: np.float64,
+) -> tuple[np.float64, NDArray[np.float64]]:
+    """Momentum-based friction: f_mag = mu_f * mass * speed, f_dir = -v/|v|."""
+    if speed <= 0.0:
+        return np.float64(0.0), np.array([0.0, 0.0], dtype=np.float64)
+    f_mag = mu_f * mass * speed
+    f_dir = -v / (speed + fric_eps)
+    return f_mag, f_dir
+
+
+@njit(cache=True)  # type: ignore
+def compute_single_wheel_friction(
+    x_wheel: NDArray[np.float64],
+    v: NDArray[np.float64],
+    omega: np.float64,
+    d1: NDArray[np.float64],
+    half_width: np.float64,
+    sign_d1: np.float64,
+    fric_a: np.float64,
+    fric_b: np.float64,
+    mu_f: np.float64,
+    mass: np.float64,
+    fric_eps: np.float64,
+) -> tuple[np.float64, NDArray[np.float64]]:
+    """Friction (f_mag, f_dir) for one wheel; (0, zeros) if not in shaded region."""
+    if not point_in_friction_region(x_wheel, fric_a, fric_b):
+        return np.float64(0.0), np.array([0.0, 0.0], dtype=np.float64)
+    v_wheel = wheel_velocity_2d(v, omega, d1, half_width, sign_d1)
+    speed = np.sqrt(v_wheel[0] * v_wheel[0] + v_wheel[1] * v_wheel[1])
+    return compute_friction_force_mag_dir(
+        v_wheel, speed, mu_f, mass, fric_eps
+    )
+
+
+@njit(cache=True)  # type: ignore
+def torque_z_from_force_2d(
+    lever_arm: NDArray[np.float64],
+    f_dir: NDArray[np.float64],
+    f_mag: np.float64,
+) -> np.float64:
+    """Z-component of torque from force f_mag * f_dir at lever_arm (2D)."""
+    return f_mag * (lever_arm[0] * f_dir[1] - lever_arm[1] * f_dir[0])
+
+
+@njit(cache=True)  # type: ignore
+def boundary_penetration_forces(
+    center: NDArray[np.float64],
+    radius: np.float64,
+    xmin: np.float64,
+    xmax: np.float64,
+    ymin: np.float64,
+    ymax: np.float64,
+    k: np.float64,
+) -> NDArray[np.float64]:
+    """Penalty force (2,) to keep circle inside [xmin,xmax]x[ymin,ymax]."""
+    out = np.zeros(2, dtype=np.float64)
+    pen_left = (xmin + radius) - center[0]
+    if pen_left > 0.0:
+        out[0] += k * pen_left
+    pen_right = center[0] - (xmax - radius)
+    if pen_right > 0.0:
+        out[0] -= k * pen_right
+    pen_bottom = (ymin + radius) - center[1]
+    if pen_bottom > 0.0:
+        out[1] += k * pen_bottom
+    pen_top = center[1] - (ymax - radius)
+    if pen_top > 0.0:
+        out[1] -= k * pen_top
+    return out
+
+
+# -----------------------------------------------------------------------------
+# Force classes (delegate to numba free-functions above)
+# -----------------------------------------------------------------------------
 
 
 class ConstantForce(NoForces):
@@ -108,11 +313,9 @@ class PotentialFieldForce(NoForces):
         Apply potential field forces: u = -K x_t ⋅ d_1,t, then apply
         left_wheel_force = right_wheel_force = [u, 0] in body frame.
         """
-        x = system.position
-        d1 = system.direction
-        u = -self._K * np.dot(x, d1)
-        left_wheel_force = np.array([u, 0.0], dtype=np.float64)
-        right_wheel_force = np.array([u, 0.0], dtype=np.float64)
+        left_wheel_force, right_wheel_force = compute_potential_field_wheel_forces(
+            system.position, system.direction, self._K
+        )
         compute_wheel_forces_to_external(
             system.direction,
             left_wheel_force,
@@ -141,50 +344,20 @@ class WheelForceSequence(NoForces):
         left_u: NDArray[np.float64],
         right_u: NDArray[np.float64],
         *,
-        stop_time: float = 4.0,
+        stop_time: float | None = None,
     ) -> None:
         super().__init__()
         self._times = np.asarray(times, dtype=np.float64)
         self._left_u = np.asarray(left_u, dtype=np.float64)
         self._right_u = np.asarray(right_u, dtype=np.float64)
-        self._stop_time = np.float64(stop_time)
-
-        if self._times.ndim != 1:
-            raise ValueError("times must be a 1D array")
-        if self._left_u.shape != self._times.shape or self._right_u.shape != self._times.shape:
-            raise ValueError("left_u/right_u must have the same shape as times")
-        if self._times.size < 2:
-            raise ValueError("times must have at least two knot points")
-        if not np.all(self._times[1:] >= self._times[:-1]):
-            raise ValueError("times must be non-decreasing")
-
-    @staticmethod
-    def _interp_piecewise_linear(
-        t: np.float64, times: NDArray[np.float64], values: NDArray[np.float64]
-    ) -> np.float64:
-        if t <= times[0]:
-            return np.float64(values[0])
-        if t >= times[-1]:
-            return np.float64(values[-1])
-        # Right-continuous selection of the current knot
-        i = int(np.searchsorted(times, t, side="right") - 1)
-        j = i + 1
-        t0 = times[i]
-        t1 = times[j]
-        v0 = values[i]
-        v1 = values[j]
-        if t1 == t0:
-            # Degenerate interval; take right value
-            return np.float64(v1)
-        s = (t - t0) / (t1 - t0)
-        return np.float64(v0 + (v1 - v0) * s)
+        self._stop_time = np.float64(stop_time) if stop_time is not None else np.inf
 
     def apply_forces(self, system, time: np.float64 = np.float64(0.0)) -> None:
         if time >= self._stop_time:
             return
 
-        ul = self._interp_piecewise_linear(np.float64(time), self._times, self._left_u)
-        ur = self._interp_piecewise_linear(np.float64(time), self._times, self._right_u)
+        ul = interp_piecewise_linear(np.float64(time), self._times, self._left_u)
+        ur = interp_piecewise_linear(np.float64(time), self._times, self._right_u)
 
         left_wheel_force = np.array([ul, 0.0], dtype=np.float64)
         right_wheel_force = np.array([ur, 0.0], dtype=np.float64)
@@ -196,60 +369,6 @@ class WheelForceSequence(NoForces):
             system.external_forces,
             system.external_torques,
         )
-
-
-def _closest_point_on_aabb(
-    p: NDArray[np.float64],
-    mins: NDArray[np.float64],
-    maxs: NDArray[np.float64],
-) -> NDArray[np.float64]:
-    return np.minimum(np.maximum(p, mins), maxs)
-
-
-def _contact_force_circle_vs_aabb(
-    center: NDArray[np.float64],
-    radius: np.float64,
-    mins: NDArray[np.float64],
-    maxs: NDArray[np.float64],
-    stiffness: np.float64,
-    *,
-    eps: float = 1e-12,
-) -> NDArray[np.float64]:
-    """
-    Penalty contact force between a circle and an axis-aligned rectangle.
-
-    Returns a force that pushes the circle center away from the rectangle if overlapping.
-    """
-    closest = _closest_point_on_aabb(center, mins, maxs)
-    d = center - closest
-    dist = float(np.sqrt(d[0] * d[0] + d[1] * d[1]))
-
-    if dist >= float(radius):
-        return np.zeros((2,), dtype=np.float64)
-
-    if dist > eps:
-        n = d / dist
-        penetration = float(radius) - dist
-        return stiffness * penetration * n
-
-    # Center is inside rectangle (or extremely close). Push out via nearest face.
-    dx_left = float(center[0] - mins[0])
-    dx_right = float(maxs[0] - center[0])
-    dy_bottom = float(center[1] - mins[1])
-    dy_top = float(maxs[1] - center[1])
-    min_dist = min(dx_left, dx_right, dy_bottom, dy_top)
-
-    if min_dist == dx_left:
-        n = np.array([-1.0, 0.0], dtype=np.float64)
-    elif min_dist == dx_right:
-        n = np.array([1.0, 0.0], dtype=np.float64)
-    elif min_dist == dy_bottom:
-        n = np.array([0.0, -1.0], dtype=np.float64)
-    else:
-        n = np.array([0.0, 1.0], dtype=np.float64)
-
-    penetration = float(radius) + min_dist
-    return stiffness * penetration * n
 
 
 class EnvironmentForces2D(NoForces):
@@ -267,8 +386,8 @@ class EnvironmentForces2D(NoForces):
         g: float = 9.81,
         bounds: tuple[float, float, float, float] = (0.0, 3.0, 0.0, 4.0),
         obstacles: tuple[tuple[float, float, float, float], ...] = (
-            (0.0, 0.6, 1.0, 3.0),   # left intrusion
-            (2.4, 3.0, 1.0, 3.0),   # right intrusion
+            (0.0, 0.6, 1.0, 3.0),  # left intrusion
+            (2.4, 3.0, 1.0, 3.0),  # right intrusion
         ),
         friction_line: tuple[float, float] = (-4.0 / 3.0, 4.0),  # y = a*x + b
         friction_eps: float = 1e-12,
@@ -287,75 +406,77 @@ class EnvironmentForces2D(NoForces):
         self.callback_params = callback_params
 
     def apply_forces(self, system, time: np.float64 = np.float64(0.0)) -> None:
-        # --- Kinetic friction (shaded region) ---
         x = system.position
         d1 = system.direction
-        R = np.array([[np.cos(np.pi / 2), -np.sin(np.pi / 2)], [np.sin(np.pi / 2), np.cos(np.pi / 2)]])
+        R = np.array(
+            [
+                [np.cos(np.pi / 2), -np.sin(np.pi / 2)],
+                [np.sin(np.pi / 2), np.cos(np.pi / 2)],
+            ]
+        )
         d2 = R @ d1
-        x_left = x + d2 * system.width / 2.0
-        x_right = x - d2 * system.width / 2.0
+        half_width = np.float64(system.width / 2.0)
+        x_left = x + d2 * half_width
+        x_right = x - d2 * half_width
         v = system.velocity
         omega = system.omega[0]
 
-        # Right wheel friction
-        # shaded if y >= a*x + b (Fig. 3)
-        f_mag = 0.0
-        f_dir = np.zeros((2,), dtype=np.float64)
-        if float(x_right[1]) >= float(self._fric_a * x_right[0] + self._fric_b):
-            v_right = v + omega * d1 * system.width / 2.0
-            speed = float(np.linalg.norm(v_right))
-            if speed > 0.0:
-                # f_mag = float(self._mu_f * system.mass * self._g)  # weight based friction
-                f_mag = float(self._mu_f * system.mass * speed)  # momentum based friction (dissipation)
-                f_dir = -v_right / (speed + self._fric_eps)
-                system.external_forces += f_mag * f_dir
-                system.external_torques += f_mag * np.cross(system.width / 2.0 * (-d2), f_dir)
-        self.callback_params["right_friction_force_mag"].append(f_mag)
-        self.callback_params["right_friction_force_dir"].append(f_dir)
-        
-        # Left wheel friction
-        # shaded if y >= a*x + b (Fig. 3)
-        f_mag = 0.0
-        f_dir = np.zeros((2,), dtype=np.float64)
-        if float(x_left[1]) >= float(self._fric_a * x_left[0] + self._fric_b):
-            v_left = v + omega * (-d1) * system.width / 2.0
-            speed = float(np.linalg.norm(v_left))
-            if speed > 0.0:
-                # f_mag = float(self._mu_f * system.mass * self._g)  # weight based friction
-                f_mag = float(self._mu_f * system.mass * speed)  # momentum based friction (dissipation)
-                f_dir = -v_left / (speed + self._fric_eps)
-                system.external_forces += f_mag * f_dir
-                system.external_torques += f_mag * np.cross(system.width / 2.0 * d2, f_dir)
-        self.callback_params["left_friction_force_mag"].append(f_mag)
-        self.callback_params["left_friction_force_dir"].append(f_dir)
-        
+        fric_eps = np.float64(self._fric_eps)
 
-        # --- Boundary collision: keep robot inside [xmin,xmax]x[ymin,ymax] ---
+        # Right wheel friction (sign_d1 = +1: v_right = v + omega * d1 * half_width)
+        f_mag_r, f_dir_r = compute_single_wheel_friction(
+            x_right,
+            v,
+            omega,
+            d1,
+            half_width,
+            np.float64(1.0),
+            self._fric_a,
+            self._fric_b,
+            self._mu_f,
+            np.float64(system.mass),
+            fric_eps,
+        )
+        system.external_forces += f_mag_r * f_dir_r
+        system.external_torques += torque_z_from_force_2d(
+            -d2 * half_width, f_dir_r, f_mag_r
+        )
+        self.callback_params["right_friction_force_mag"].append(float(f_mag_r))
+        self.callback_params["right_friction_force_dir"].append(f_dir_r.copy())
+
+        # Left wheel friction (sign_d1 = -1)
+        f_mag_l, f_dir_l = compute_single_wheel_friction(
+            x_left,
+            v,
+            omega,
+            d1,
+            half_width,
+            np.float64(-1.0),
+            self._fric_a,
+            self._fric_b,
+            self._mu_f,
+            np.float64(system.mass),
+            fric_eps,
+        )
+        system.external_forces += f_mag_l * f_dir_l
+        system.external_torques += torque_z_from_force_2d(
+            d2 * half_width, f_dir_l, f_mag_l
+        )
+        self.callback_params["left_friction_force_mag"].append(float(f_mag_l))
+        self.callback_params["left_friction_force_dir"].append(f_dir_l.copy())
+
+        # Boundary penalty
         xmin, xmax, ymin, ymax = self._bounds
         r = np.float64(system.radius)
         k = self._mu_c
+        system.external_forces += boundary_penetration_forces(
+            x, r, xmin, xmax, ymin, ymax, k
+        )
 
-        # Left wall
-        pen = float((xmin + r) - x[0])
-        if pen > 0.0:
-            system.external_forces += k * pen * np.array([1.0, 0.0], dtype=np.float64)
-        # Right wall
-        pen = float(x[0] - (xmax - r))
-        if pen > 0.0:
-            system.external_forces += k * pen * np.array([-1.0, 0.0], dtype=np.float64)
-        # Bottom wall
-        pen = float((ymin + r) - x[1])
-        if pen > 0.0:
-            system.external_forces += k * pen * np.array([0.0, 1.0], dtype=np.float64)
-        # Top wall
-        pen = float(x[1] - (ymax - r))
-        if pen > 0.0:
-            system.external_forces += k * pen * np.array([0.0, -1.0], dtype=np.float64)
-
-        # --- Obstacle collision: keep robot outside rectangles ---
-        for (oxmin, oxmax, oymin, oymax) in self._obstacles:
+        # Obstacle penalty
+        for oxmin, oxmax, oymin, oymax in self._obstacles:
             mins = np.array([oxmin, oymin], dtype=np.float64)
             maxs = np.array([oxmax, oymax], dtype=np.float64)
-            system.external_forces += _contact_force_circle_vs_aabb(
-                x, r, mins, maxs, k, eps=self._fric_eps
+            system.external_forces += contact_force_circle_vs_aabb(
+                x, r, mins, maxs, k, fric_eps
             )
