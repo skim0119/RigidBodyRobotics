@@ -20,6 +20,7 @@ def _update_rigid_SO2_kinematic_state(
     R = np.array([[c, -s], [s, c]])
     direction[:] = R @ direction
 
+
 @numba.njit(cache=True)  # type: ignore
 def _update_rigid_SO2_dynamic_state(
     prefac: np.float64,
@@ -45,8 +46,8 @@ def _update_accelerations(
     Update <acceleration and angular acceleration> given <internal force/torque and external force/torque>.
     """
 
-    acceleration = external_forces / mass
-    alpha_collection = external_torques / inertia
+    acceleration[:] = external_forces / mass
+    alpha[:] = external_torques / inertia
 
 
 @numba.njit(cache=True)  # type: ignore

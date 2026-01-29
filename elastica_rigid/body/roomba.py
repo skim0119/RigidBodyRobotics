@@ -95,8 +95,8 @@ class Roomba(SystemProtocol):
             self.alpha = np.zeros((1,), dtype=np.float64)
 
         # External
-        self.external_forces = np.zeros((3,), dtype=np.float64)
-        self.external_torques = np.zeros((3,), dtype=np.float64)
+        self.external_forces = np.zeros((2,), dtype=np.float64)
+        self.external_torques = np.zeros((1,), dtype=np.float64)
 
     @classmethod
     def create_robot(
