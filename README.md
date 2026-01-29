@@ -11,6 +11,7 @@ This is just testing repo for utilizing elastica physics simulation framework.
 
 - [x] Migrate PyElastica structure for rigid body and explicit-euler stepping
     - [x] Modify stepper to explicit-euler
+    - [x] Stepper to symplectic-euler
 - [x] Implement robot and its properties
 - [ ] Setup problem statement
     - [x] Add Roomba as part of the pyelastica-simulator system
