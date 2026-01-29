@@ -35,6 +35,7 @@ class Simulator(
 
 
 sim = Simulator()
+sim.append_allowed_types(er.Roomba)
 
 # Simulation parameters
 simulation_time = 10.0 # (sec)
@@ -86,7 +87,7 @@ sim.collect_diagnostics(robot).using(
 
 sim.finalize()
 
-timestepper = er.ExplicitEuler()
+timestepper = er.ExplicitEulerForward()
 total_steps = int(simulation_time / dt)
 print("Total steps", total_steps)
 
