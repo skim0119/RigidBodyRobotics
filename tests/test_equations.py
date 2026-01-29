@@ -50,9 +50,7 @@ class TestUpdateRigidSO2DynamicState:
         omega = np.array([0.5])
         alpha = np.array([1.0])
 
-        _update_rigid_SO2_dynamic_state(
-            prefac, velocity, acceleration, omega, alpha
-        )
+        _update_rigid_SO2_dynamic_state(prefac, velocity, acceleration, omega, alpha)
 
         np.testing.assert_allclose(velocity, [2.0, 0.0])  # 1 + 0.5*2
         np.testing.assert_allclose(omega, [1.0])  # 0.5 + 0.5*1
@@ -71,9 +69,12 @@ class TestUpdateAccelerations:
         external_torques = np.array([1.0])
 
         _update_accelerations(
-            acceleration, alpha,
-            np.array(mass), np.array(inertia),
-            external_forces, external_torques,
+            acceleration,
+            alpha,
+            np.array(mass),
+            np.array(inertia),
+            external_forces,
+            external_torques,
         )
 
         np.testing.assert_allclose(acceleration, [2.0, 1.0])

@@ -686,6 +686,7 @@ name = "pyelastica-rigid"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "black" },
     { name = "pyelastica" },
 ]
 
@@ -704,6 +705,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "autoflake", marker = "extra == 'dev'" },
+    { name = "black", specifier = ">=26.1.0" },
     { name = "black", marker = "extra == 'dev'" },
     { name = "flake8", marker = "extra == 'dev'" },
     { name = "mypy", marker = "extra == 'dev'" },

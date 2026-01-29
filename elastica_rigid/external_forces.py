@@ -4,7 +4,6 @@ from numpy.typing import NDArray
 from numba import njit
 from elastica.external_forces import NoForces
 
-
 # -----------------------------------------------------------------------------
 # Numba free-functions (used by class methods below)
 # -----------------------------------------------------------------------------
@@ -195,9 +194,7 @@ def compute_single_wheel_friction(
         return np.float64(0.0), np.array([0.0, 0.0], dtype=np.float64)
     v_wheel = wheel_velocity_2d(v, omega, d1, half_width, sign_d1)
     speed = np.sqrt(v_wheel[0] * v_wheel[0] + v_wheel[1] * v_wheel[1])
-    return compute_friction_force_mag_dir(
-        v_wheel, speed, mu_f, mass, fric_eps
-    )
+    return compute_friction_force_mag_dir(v_wheel, speed, mu_f, mass, fric_eps)
 
 
 @njit(cache=True)  # type: ignore
