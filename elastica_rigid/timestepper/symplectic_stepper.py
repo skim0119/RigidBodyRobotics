@@ -1,27 +1,18 @@
-"""Explicit time steppers for integrating kinematic and dynamic equations of rigid bodies."""
+"""Symplectic time steppers for integrating kinematic and dynamic equations of rigid bodies."""
 
-from typing import Protocol
-
-from elastica.systems.protocol import SymplecticSystemProtocol
-from elastica.typing import SystemCollectionType
+from elastica.typing import (
+    SystemCollectionType,
+)
 
 import numpy as np
 
-
-class RigidSystem(SymplecticSystemProtocol, Protocol):
-    """Protocol for rigid body systems used by time steppers."""
-
-    def emplace_back_state(self) -> None:
-        """
-        Store current state.
-        (For later, advanced explicit methods like RK schemes.)
-        """
-        raise NotImplementedError
+from .explicit_stepper import RigidSystem
 
 
-class ExplicitEulerForward:
+class SymplecticEulerForward:
     """
-    Explicit Euler forward stepper for differential-algebraic equations.
+    Symplectic Euler forward stepper for differential-algebraic equations.
+    Updates dynamics before kinematics (momentum-first) for better energy conservation.
     """
 
     def step(
@@ -31,7 +22,7 @@ class ExplicitEulerForward:
         dt: np.float64,
     ) -> np.float64:
         """
-        Perform one explicit Euler forward step over the systems.
+        Perform one symplectic Euler forward step over the systems.
 
         Returns
         -------
@@ -44,11 +35,11 @@ class ExplicitEulerForward:
         # Compute external forces and couples
         SystemCollection.synchronize(simulation_time)
 
-        # Step
+        # Step: dynamics first, then kinematics (symplectic order)
         for system in SystemCollection.final_systems():
             system.update_accelerations(time)
-            system.update_kinematics(time, dt)
             system.update_dynamics(time, dt)
+            system.update_kinematics(time, dt)
 
         SystemCollection.constrain_values(simulation_time)
         SystemCollection.constrain_rates(simulation_time)
@@ -72,6 +63,6 @@ class ExplicitEulerForward:
         Perform one step for a single system instance (mainly for testing).
         """
         system.update_accelerations(time)
-        system.update_kinematics(time, dt)
         system.update_dynamics(time, dt)
+        system.update_kinematics(time, dt)
         return time + dt
