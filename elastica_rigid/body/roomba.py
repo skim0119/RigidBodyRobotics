@@ -180,3 +180,12 @@ class Roomba(SystemProtocol):
             self.direction,
             self.omega,
         )
+
+    def compute_translational_kinetic_energy(self) -> float:
+        return 0.5 * self.mass * np.dot(self.velocity, self.velocity)
+    
+    def compute_rotational_kinetic_energy(self) -> float:
+        return 0.5 * self.inertia * self.omega[0] ** 2
+
+    def compute_kinetic_energy(self) -> float:
+        return self.compute_translational_kinetic_energy() + self.compute_rotational_kinetic_energy()

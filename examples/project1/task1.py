@@ -39,6 +39,8 @@ sim = Simulator()
 sim.append_allowed_types(er.Roomba)  # Cool things!
 
 # Simulation parameters
+F_l_forward = 0.1  # N (left wheel forward component)
+F_r_forward = 0.0  # N
 simulation_time = 10.0  # (sec)
 dt = 0.01  # (sec)
 
@@ -46,7 +48,7 @@ dt = 0.01  # (sec)
 robot = er.Roomba.create_robot(
     initial_position=np.array([0.0, 0.0]),
     initial_direction=np.array([1.0, 0.0]),  # x-axis
-    mass=0.1,  # (kg)
+    mass=2,  # (kg)
     inertia=0.05,  # (kg m^2)
     radius=0.2,  # (m)
     width=0.15,  # (m)
@@ -54,8 +56,8 @@ robot = er.Roomba.create_robot(
 sim.append(robot)
 
 # Forces added to the robot
-force_left = np.array([0.1, 0.0])  # (N)  d1, d2
-force_right = np.array([0.0, 0.0])  # (N)  d1, d2
+force_left = np.array([F_l_forward, 0.0])  # (N)  d1, d2
+force_right = np.array([F_r_forward, 0.0])  # (N)  d1, d2
 duration = 10.0  # (sec)
 sim.add_forcing_to(robot).using(er.ConstantForce, force_left, force_right, duration)
 
@@ -108,8 +110,6 @@ for i in range(total_steps):
 # Net force in inertial: F_net = (F_l + F_r) @ director = 0.1 * d1(t) → a(t) = (0.1/m) * d1(t).
 # Torque from wheel forces: τ = (track_width/2) * (F_l - F_r)_forward → α = τ/I = const.
 # So ω(t) = ω_0 + α*t = α*t, θ(t) = (1/2)*α*t²; v(t) = ∫_0^t a(s) ds involves Fresnel integrals.
-F_l_forward = 0.1  # N (left wheel forward component)
-F_r_forward = 0.0  # N
 m = float(robot.mass)
 inertia = float(robot.inertia)
 track_width = float(robot.width)
@@ -118,19 +118,26 @@ t_num = np.array(recorded_history["time"])
 linear_speed_num = np.array(recorded_history["linear_speed"])
 angular_velocity_num = np.array(recorded_history["angular_velocity"])
 
-# Angular acceleration and angular velocity (one wheel drives → moment)
-tau = (track_width / 2) * (-F_l_forward + F_r_forward)  # N·m
-alpha_rad = tau / inertia  # rad/s²
-angular_velocity_analytical = alpha_rad * t_num
+if F_l_forward == F_r_forward:
+    linear_speed_analytical = t_num * 2 * F_l_forward / m
+    angular_velocity_analytical = t_num * 0.0
+elif F_l_forward == -F_r_forward:
+    linear_speed_analytical = t_num * 0
+    angular_velocity_analytical = t_num * F_r_forward * track_width / inertia
+else:
+    # Angular acceleration and angular velocity (one wheel drives → moment)
+    tau = (track_width / 2) * (-F_l_forward + F_r_forward)  # N·m
+    alpha_rad = tau / inertia  # rad/s²
+    angular_velocity_analytical = alpha_rad * t_num
 
-# Linear speed: a(t) = (F_net/m) = (0.1/m)*d1(t), d1(t) = [cos(θ(t)), sin(θ(t))], θ(t) = (1/2)*α*t².
-# v(t) = ∫_0^t [cos(α s²/2), sin(α s²/2)] ds → Fresnel: z(t)=t*sqrt(α/π), v_x = sqrt(π/α)*C(z), v_y = sqrt(π/α)*S(z)
-scale = np.sqrt(-alpha_rad / np.pi)
-z = scale * t_num
-S_z, C_z = fresnel(z)
-v_x_analytical = np.sqrt(np.pi / -alpha_rad) * C_z
-v_y_analytical = np.sqrt(np.pi / -alpha_rad) * S_z
-linear_speed_analytical = np.sqrt(v_x_analytical**2 + v_y_analytical**2)
+    # Linear speed: a(t) = (F_net/m) = (0.1/m)*d1(t), d1(t) = [cos(θ(t)), sin(θ(t))], θ(t) = (1/2)*α*t².
+    # v(t) = ∫_0^t [cos(α s²/2), sin(α s²/2)] ds → Fresnel: z(t)=t*sqrt(α/π), v_x = sqrt(π/α)*C(z), v_y = sqrt(π/α)*S(z)
+    scale = np.sqrt(-alpha_rad / np.pi)
+    z = scale * t_num
+    S_z, C_z = fresnel(z)
+    v_x_analytical = np.sqrt(np.pi / -alpha_rad) * C_z
+    v_y_analytical = np.sqrt(np.pi / -alpha_rad) * S_z
+    linear_speed_analytical = np.sqrt(v_x_analytical**2 + v_y_analytical**2)
 
 fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(8, 6))
 
