@@ -21,6 +21,7 @@ import numpy as np
 from collections import defaultdict
 
 import matplotlib.pyplot as plt
+from scipy.special import fresnel
 
 import elastica as ea
 import elastica_rigid as er
@@ -35,7 +36,7 @@ class Simulator(
 
 
 sim = Simulator()
-sim.append_allowed_types(er.Roomba)
+sim.append_allowed_types(er.Roomba)  # Cool things!
 
 # Simulation parameters
 simulation_time = 10.0  # (sec)
@@ -53,9 +54,10 @@ robot = er.Roomba.create_robot(
 sim.append(robot)
 
 # Forces added to the robot
-force_left = np.array([0.1, 0.0])  # (N)
+force_left = np.array([0.1, 0.0])  # (N)  d1, d2
+force_right = np.array([0.0, 0.0])  # (N)  d1, d2
 duration = 10.0  # (sec)
-sim.add_forcing_to(robot).using(er.ConstantForce, force_left, duration)
+sim.add_forcing_to(robot).using(er.ConstantForce, force_left, force_right, duration)
 
 
 # Add call backs
@@ -72,13 +74,15 @@ class CallBack(ea.CallBackBaseClass):
     def make_callback(self, system, time, current_step: int):
         if current_step % self.every == 0:
             self.callback_params["time"].append(time)
+            self.callback_params["position"].append(system.position.copy())
+            self.callback_params["direction"].append(system.direction.copy())
             # Linear speed w_t = ||v_t|| (same as ||η_t||/m since η = m*v)
             self.callback_params["linear_speed"].append(
                 np.linalg.norm(system.velocity.copy())
             )
             # Angular velocity ω_t (rad/s)
             self.callback_params["angular_velocity"].append(
-                float(system.omega.flat[0])
+                float(system.omega[0])
             )
             return
 
@@ -100,20 +104,33 @@ for i in range(total_steps):
     time = timestepper.step(sim, time, dt)
 
 # --- Post-processing: time-series plots and comparison with analytical solutions ---
-# Constant force F = [0.1, 0] N, no torque → a = F/m, α = 0
-# Analytical: v(t) = v_0 + (F/m)*t = (F/m)*t, ω(t) = ω_0 = 0
-# Linear speed w(t) = ||v(t)|| = (F/m)*t (force along x, v_0=0)
-F_mag = 0.1  # N
-m = robot.mass
-I = robot.inertia
+# Force on left wheel only: F_l = [0.1, 0] N (forward), F_r = [0, 0] N.
+# Net force in inertial: F_net = (F_l + F_r) @ director = 0.1 * d1(t) → a(t) = (0.1/m) * d1(t).
+# Torque from wheel forces: τ = (track_width/2) * (F_l - F_r)_forward → α = τ/I = const.
+# So ω(t) = ω_0 + α*t = α*t, θ(t) = (1/2)*α*t²; v(t) = ∫_0^t a(s) ds involves Fresnel integrals.
+F_l_forward = 0.1  # N (left wheel forward component)
+F_r_forward = 0.0  # N
+m = float(robot.mass)
+inertia = float(robot.inertia)
+track_width = float(robot.width)
 
 t_num = np.array(recorded_history["time"])
 linear_speed_num = np.array(recorded_history["linear_speed"])
 angular_velocity_num = np.array(recorded_history["angular_velocity"])
 
-# Analytical solutions
-linear_speed_analytical = (F_mag / float(m)) * t_num
-angular_velocity_analytical = np.zeros_like(t_num)
+# Angular acceleration and angular velocity (one wheel drives → moment)
+tau = (track_width / 2) * (-F_l_forward + F_r_forward)  # N·m
+alpha_rad = tau / inertia  # rad/s²
+angular_velocity_analytical = alpha_rad * t_num
+
+# Linear speed: a(t) = (F_net/m) = (0.1/m)*d1(t), d1(t) = [cos(θ(t)), sin(θ(t))], θ(t) = (1/2)*α*t².
+# v(t) = ∫_0^t [cos(α s²/2), sin(α s²/2)] ds → Fresnel: z(t)=t*sqrt(α/π), v_x = sqrt(π/α)*C(z), v_y = sqrt(π/α)*S(z)
+scale = np.sqrt(-alpha_rad / np.pi)
+z = scale * t_num
+S_z, C_z = fresnel(z)
+v_x_analytical = np.sqrt(np.pi / -alpha_rad) * C_z
+v_y_analytical = np.sqrt(np.pi / -alpha_rad) * S_z
+linear_speed_analytical = np.sqrt(v_x_analytical**2 + v_y_analytical**2)
 
 fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True, figsize=(8, 6))
 
@@ -132,6 +149,36 @@ ax2.grid(True, alpha=0.3)
 
 plt.suptitle("Task 1: Open-Loop Dynamics — Numerical vs Analytical")
 plt.tight_layout()
-plt.savefig("task1_linear_and_angular_velocity.pdf")
-plt.savefig("task1_linear_and_angular_velocity.png", dpi=150)
-plt.show()
+plt.savefig("task1_linear_and_angular_velocity.png", dpi=300)
+
+# --- Trajectory and facing direction ---
+positions = np.array(recorded_history["position"])   # (n, 2)
+directions = np.array(recorded_history["direction"])  # (n, 2)
+x, y = positions[:, 0], positions[:, 1]
+d1x, d1y = directions[:, 0], directions[:, 1]
+
+fig2, ax = plt.subplots(figsize=(8, 6))
+ax.plot(x, y, "b-", lw=1.5, label="Trajectory")
+
+# Subsample arrows so they don't overlap (e.g. ~20 along path)
+arrow_skip = max(1, len(x) // 20)
+scale = 0.15 * np.max(np.ptp(positions, axis=0))  # arrow length ~15% of range
+ax.quiver(
+    x[::arrow_skip],
+    y[::arrow_skip],
+    d1x[::arrow_skip],
+    d1y[::arrow_skip],
+    scale=1.0 / scale if scale > 0 else 1.0,
+    scale_units="xy",
+    color="C1",
+    alpha=0.8,
+    label="Facing direction",
+)
+ax.set_xlabel("x (m)")
+ax.set_ylabel("y (m)")
+ax.set_title("Task 1: Robot trajectory and facing direction")
+ax.legend(loc="upper left")
+ax.grid(True, alpha=0.3)
+ax.set_aspect("equal")
+plt.tight_layout()
+plt.savefig("task1_trajectory.png", dpi=150)

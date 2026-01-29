@@ -12,34 +12,61 @@ class ConstantForce(NoForces):
 
     def __init__(
         self,
-        force: NDArray[np.float64],
+        left_wheel_force: NDArray[np.float64],
+        right_wheel_force: NDArray[np.float64],
         duration: float,
     ) -> None:
         """
 
         Parameters
         ----------
-        force: numpy.ndarray
-            1D (dim) array containing data with 'float' type. Gravitational acceleration vector.
-            Defaults to [0.0, -9.80665, 0.0] if not provided.
-
+        left_wheel_force: numpy.ndarray
+            1D (dim) array containing data with 'float' type. Left wheel force vector.
+        right_wheel_force: numpy.ndarray
+            1D (dim) array containing data with 'float' type. Right wheel force vector.
+        duration: float
+            Duration of the force application in seconds.
         """
         super().__init__()
-        self._force = force
+        self._left_wheel_force = left_wheel_force
+        self._right_wheel_force = right_wheel_force
         self._duration = np.float64(duration)
 
     def apply_forces(self, system, time: np.float64 = np.float64(0.0)) -> None:
         if time < self._duration:
-            self._compute_forces(self._force, system.mass, system.external_forces)
+            self._compute_forces(
+                system.direction,
+                self._left_wheel_force,
+                self._right_wheel_force,
+                system.width,
+                system.external_forces,
+                system.external_torques,
+            )
 
     @staticmethod
     @njit(cache=True)  # type: ignore
     def _compute_forces(
-        force: NDArray[np.float64],
-        mass: NDArray[np.float64],
+        direction: NDArray[np.float64],
+        left_wheel_force: NDArray[np.float64],
+        right_wheel_force: NDArray[np.float64],
+        track_width: np.float64,
         external_forces: NDArray[np.float64],
+        external_torques: NDArray[np.float64],
     ) -> None:
-        external_forces += force
+        R = np.array(
+            [
+                [np.cos(np.pi / 2), -np.sin(np.pi / 2)],
+                [np.sin(np.pi / 2), np.cos(np.pi / 2)],
+            ]
+        )
+        d1 = direction
+        d2 = R @ d1
+        director = np.empty((2, 2))
+        director[:, 0] = d1
+        director[:, 1] = d2
+
+        external_forces += director @ (left_wheel_force + right_wheel_force)
+        external_torques += (track_width / 2) * (-left_wheel_force + right_wheel_force)
 
 
 class PotentialFieldForce(NoForces):
