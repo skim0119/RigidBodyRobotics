@@ -62,6 +62,7 @@ class Task3CallBack(ea.CallBackBaseClass):
         self.callback_params["time"].append(float(time))
         self.callback_params["position"].append(system.position.copy())
         self.callback_params["direction"].append(system.direction.copy())
+        self.callback_params["external_force"].append(system.external_forces.copy())
         self.callback_params["p_norm"].append(p_norm)
         self.callback_params["l"].append(l)
         self.callback_params["H"].append(H)
@@ -82,7 +83,7 @@ def plot_environment(ax):
     ax.plot([xmin, xmax, xmax, xmin, xmin], [ymin, ymin, ymax, ymax, ymin], "k-", lw=2)
 
     # Obstacles
-    for (oxmin, oxmax, oymin, oymax) in obstacles:
+    for oxmin, oxmax, oymin, oymax in obstacles:
         ax.fill(
             [oxmin, oxmax, oxmax, oxmin, oxmin],
             [oymin, oymin, oymax, oymax, oymin],
@@ -95,7 +96,14 @@ def plot_environment(ax):
     # Friction region (Fig. 3): shaded half-plane y >= (-4/3)x + 4, clipped to bounds
     # The line crosses the bounds at (0,4) and (3,0)
     tri = np.array([[0.0, 4.0], [3.0, 0.0], [3.0, 4.0]], dtype=float)
-    ax.fill(tri[:, 0], tri[:, 1], color="0.85", edgecolor="none", zorder=0, label=r"$\mu_f$ region")
+    ax.fill(
+        tri[:, 0],
+        tri[:, 1],
+        color="0.85",
+        edgecolor="none",
+        zorder=0,
+        label=r"$\mu_f$ region",
+    )
 
     ax.set_xlim(xmin - 0.1, xmax + 0.1)
     ax.set_ylim(ymin - 0.1, ymax + 0.1)
@@ -123,20 +131,37 @@ def main():
         width=0.15,  # (m)
     )
 
-    # Wheel force commands (Fig. 4), nonzero for t in [0,4], then 0
-    times = np.array([0.0, 1.0, 2.0, 3.0, 4.0], dtype=float)
-    u_left = np.array([0.0, 0.5, -0.5, 0.0, 1.5], dtype=float)
-    u_right = np.array([0.0, 0.5, 0.25, 0.0, 0.5], dtype=float)
-
     sim = Simulator()
     sim.append_allowed_types(er.Roomba)
     sim.append(robot)
 
-    sim.add_forcing_to(robot).using(er.WheelForceSequence, times, u_left, u_right, stop_time=4.0)
     recorded = defaultdict(list)
-    sim.add_forcing_to(robot).using(er.EnvironmentForces2D, mu_f, mu_c, callback_params=recorded)
-
-    sim.collect_diagnostics(robot).using(Task3CallBack, step_skip=1, callback_params=recorded)
+    # Wheel force commands (Fig. 4), nonzero for t in [0,4], then 0
+    times = np.array([0.0, 1.0, 2.0, 3.0, 4.0], dtype=float)
+    u_left = np.array([0.0, 0.5, -0.5, 0.0, 1.5], dtype=float)
+    u_right = np.array([0.0, 0.5, 0.25, 0.0, 0.5], dtype=float)
+    sim.add_forcing_to(robot).using(
+        er.WheelForceSequence,
+        times,
+        u_left,
+        u_right,
+    )
+    workspace_bounds = (0.0, 3.0, 0.0, 4.0)
+    obstacles = [
+        (0.0, 0.6, 1.0, 3.0),
+        (2.4, 3.0, 1.0, 3.0),
+    ]
+    sim.add_forcing_to(robot).using(
+        er.EnvironmentForces2D,
+        mu_f,
+        mu_c,
+        bounds=workspace_bounds,
+        obstacles=obstacles,
+        callback_params=recorded,
+    )
+    sim.collect_diagnostics(robot).using(
+        Task3CallBack, step_skip=10, callback_params=recorded
+    )
 
     sim.finalize()
 
@@ -169,7 +194,13 @@ def main():
 
     # Ensure friction arrays match position array length (take minimum to be safe)
     n_pos = len(pos)
-    n_fric = min(len(left_fric_mag), len(left_fric_dir), len(right_fric_mag), len(right_fric_dir), n_pos)
+    n_fric = min(
+        len(left_fric_mag),
+        len(left_fric_dir),
+        len(right_fric_mag),
+        len(right_fric_dir),
+        n_pos,
+    )
     pos = pos[:n_fric]
     dirs = dirs[:n_fric]
     left_fric_mag = left_fric_mag[:n_fric]
@@ -195,19 +226,29 @@ def main():
     pos_skip = pos[::skip]
     for i, p in enumerate(pos_skip):
         circle = mpatches.Circle(
-            p, r, facecolor="C0", edgecolor="C0", alpha=0.25, linewidth=1.5, zorder=3.5,
+            p,
+            r,
+            facecolor="C0",
+            edgecolor="C0",
+            alpha=0.25,
+            linewidth=1.5,
+            zorder=3.5,
             label=(rf"Robot ($r$ = {r} m)" if i == 0 else None),
         )
         ax1.add_patch(circle)
 
     # Friction force vectors (subsample)
     # Scale friction vectors for visualization
-    max_fric_mag = max(left_fric_mag.max(), right_fric_mag.max()) if len(left_fric_mag) > 0 else 1.0
+    max_fric_mag = (
+        max(left_fric_mag.max(), right_fric_mag.max())
+        if len(left_fric_mag) > 0
+        else 1.0
+    )
     fric_scale = 0.1 / (max_fric_mag + 1e-6)  # Scale so max arrow length is ~0.1 m
-    
+
     left_fric_vec = left_fric_mag[:, None] * left_fric_dir * fric_scale
     right_fric_vec = right_fric_mag[:, None] * right_fric_dir * fric_scale
-    
+
     ax1.quiver(
         pos_left[::skip, 0],
         pos_left[::skip, 1],
@@ -281,7 +322,27 @@ def main():
     fig2.tight_layout()
     fig2.savefig("task3_momentum_energy.png", dpi=150)
 
+    plt.close("all")
+
+    # Animation
+    # Animate and save the video with the environment and trajectory
+    viz = er.Visualize(
+        np.array(recorded["time"]),
+        np.array(recorded["position"]),
+        np.array(recorded["direction"]),
+        np.array(recorded["external_force"]),
+        robot_radius=0.2,
+        show_trajectory=True,
+        show_external_forces=True,
+        fps=30,
+    )
+    viz.stamp_environment_on_figure(
+        bounds=workspace_bounds,
+        obstacles=obstacles,
+    )
+    anim = viz.animate()
+    anim.save("task3_video.mp4", writer="ffmpeg", dpi=150)
+
 
 if __name__ == "__main__":
     main()
-

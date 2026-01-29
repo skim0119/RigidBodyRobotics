@@ -139,7 +139,7 @@ plt.tight_layout()
 plt.savefig("task2_energy_conservation.png", dpi=300)
 
 # --- Trajectory and facing direction (Symplectic only) ---
-positions_symp = np.array(history_symplectic["position"])   # (n, 2)
+positions_symp = np.array(history_symplectic["position"])  # (n, 2)
 directions_symp = np.array(history_symplectic["direction"])  # (n, 2)
 x_symp, y_symp = positions_symp[:, 0], positions_symp[:, 1]
 d1x_symp, d1y_symp = directions_symp[:, 0], directions_symp[:, 1]
