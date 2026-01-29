@@ -6,7 +6,8 @@ import numpy as np
 from elastica.systems.protocol import SystemProtocol
 
 from .equations import (
-    _update_rigid_SO2_state,
+    _update_rigid_SO2_dynamic_state,
+    _update_rigid_SO2_kinematic_state,
     _update_accelerations,
 )
 from .._so2 import from_d1
@@ -86,16 +87,12 @@ class Roomba(SystemProtocol):
             self.acceleration = np.zeros((2,), dtype=np.float64)
 
         if initial_omega is not None:
-            self.omega = np.atleast_1d(
-                np.asarray(initial_omega, dtype=np.float64)
-            )
+            self.omega = np.atleast_1d(np.asarray(initial_omega, dtype=np.float64))
         else:
             self.omega = np.zeros((1,), dtype=np.float64)
 
         if initial_alpha is not None:
-            self.alpha = np.atleast_1d(
-                np.asarray(initial_alpha, dtype=np.float64)
-            )
+            self.alpha = np.atleast_1d(np.asarray(initial_alpha, dtype=np.float64))
         else:
             self.alpha = np.zeros((1,), dtype=np.float64)
 
@@ -155,15 +152,29 @@ class Roomba(SystemProtocol):
     def update_accelerations(self, time: np.float64) -> None:
         _update_accelerations(
             self.acceleration,
-            self.internal_forces,
-            self.external_forces,
-            self.mass,
             self.alpha,
-            self.inv_mass_second_moment_of_inertia,
-            self.internal_torques,
+            self.mass,
+            self.inertia,
+            self.external_forces,
             self.external_torques,
-            self.dilatation,
         )
 
-    def update_state(self, time, dt):
-        _update_rigid_SO2_state()
+    def update_dynamics(self, time, dt):
+        prefac = np.float64(dt)
+        _update_rigid_SO2_dynamic_state(
+            prefac,
+            self.velocity,
+            self.acceleration,
+            self.omega,
+            self.alpha,
+        )
+
+    def update_kinematics(self, time, dt):
+        prefac = np.float64(dt)
+        _update_rigid_SO2_kinematic_state(
+            prefac,
+            self.position,
+            self.velocity,
+            self.direction,
+            self.omega,
+        )
