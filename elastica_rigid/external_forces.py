@@ -5,6 +5,38 @@ from numba import njit
 from elastica.external_forces import NoForces
 
 
+@njit(cache=True)  # type: ignore
+def compute_wheel_forces_to_external(
+    direction: NDArray[np.float64],
+    left_wheel_force: NDArray[np.float64],
+    right_wheel_force: NDArray[np.float64],
+    track_width: np.float64,
+    external_forces: NDArray[np.float64],
+    external_torques: NDArray[np.float64],
+) -> None:
+    """
+    Add wheel forces (body frame) to system external forces and torques.
+
+    Builds the body director from direction (d1) and its 90° rotation (d2),
+    then: external_forces += director @ (left + right);
+          external_torques += (track_width/2) * (-left + right).
+    """
+    R = np.array(
+        [
+            [np.cos(np.pi / 2), -np.sin(np.pi / 2)],
+            [np.sin(np.pi / 2), np.cos(np.pi / 2)],
+        ]
+    )
+    d1 = direction
+    d2 = R @ d1
+    director = np.empty((2, 2))
+    director[:, 0] = d1
+    director[:, 1] = d2
+
+    external_forces += director @ (left_wheel_force + right_wheel_force)
+    external_torques += (track_width / 2) * (-left_wheel_force + right_wheel_force)
+
+
 class ConstantForce(NoForces):
     """
     This class applies a constant gravitational force to the entire rod.
@@ -34,7 +66,7 @@ class ConstantForce(NoForces):
 
     def apply_forces(self, system, time: np.float64 = np.float64(0.0)) -> None:
         if time < self._duration:
-            self._compute_forces(
+            compute_wheel_forces_to_external(
                 system.direction,
                 self._left_wheel_force,
                 self._right_wheel_force,
@@ -43,39 +75,14 @@ class ConstantForce(NoForces):
                 system.external_torques,
             )
 
-    @staticmethod
-    @njit(cache=True)  # type: ignore
-    def _compute_forces(
-        direction: NDArray[np.float64],
-        left_wheel_force: NDArray[np.float64],
-        right_wheel_force: NDArray[np.float64],
-        track_width: np.float64,
-        external_forces: NDArray[np.float64],
-        external_torques: NDArray[np.float64],
-    ) -> None:
-        R = np.array(
-            [
-                [np.cos(np.pi / 2), -np.sin(np.pi / 2)],
-                [np.sin(np.pi / 2), np.cos(np.pi / 2)],
-            ]
-        )
-        d1 = direction
-        d2 = R @ d1
-        director = np.empty((2, 2))
-        director[:, 0] = d1
-        director[:, 1] = d2
-
-        external_forces += director @ (left_wheel_force + right_wheel_force)
-        external_torques += (track_width / 2) * (-left_wheel_force + right_wheel_force)
-
 
 class PotentialFieldForce(NoForces):
     """
-    Abstract class for applying potential field forces to a robot.
-    This class provides the structure for implementing control laws like:
-    u_t^(l) = u_t^(r) = -Kx_t ⋅ d_1,t
+    Applies potential field forces via the control law:
+    u_t^(l) = u_t^(r) = -K x_t ⋅ d_1,t
 
-    The implementation details will be added later.
+    Both wheels receive the same force in the forward (d_1) direction,
+    pulling the robot toward the origin when K > 0.
 
     Attributes
     ----------
@@ -94,23 +101,23 @@ class PotentialFieldForce(NoForces):
             Stiffness parameter (N/m). Defaults to 0.5.
         """
         super().__init__()
-        self.K = np.float64(K)
+        self._K = np.float64(K)
 
     def apply_forces(self, system, time: np.float64 = np.float64(0.0)) -> None:
         """
-        Apply potential field forces to the system.
-
-        This is an abstract implementation - details to be filled in later.
-        The control law u_t^(l) = u_t^(r) = -Kx_t ⋅ d_1,t will be implemented here.
-
-        Parameters
-        ----------
-        system: RodType | RigidBodyType
-            The system to apply forces to.
-        time: float
-            Current simulation time.
+        Apply potential field forces: u = -K x_t ⋅ d_1,t, then apply
+        left_wheel_force = right_wheel_force = [u, 0] in body frame.
         """
-        # Abstract implementation - to be filled in later
-        # Will compute: u_t^(l) = u_t^(r) = -Kx_t ⋅ d_1,t
-        # and apply forces to left and right wheels
-        pass
+        x = system.position
+        d1 = system.direction
+        u = -self._K * np.dot(x, d1)
+        left_wheel_force = np.array([u, 0.0], dtype=np.float64)
+        right_wheel_force = np.array([u, 0.0], dtype=np.float64)
+        compute_wheel_forces_to_external(
+            system.direction,
+            left_wheel_force,
+            right_wheel_force,
+            system.width,
+            system.external_forces,
+            system.external_torques,
+        )
