@@ -44,7 +44,7 @@ class TestExplicitEulerForward:
 
         stepper.step_single_instance(system, time, dt)
 
-        # a = F/m = 1, v_new = v + dt*a = 0.1, x_new = x + dt*v = 0.01 (explicit Euler)
+        # a = F/m = 1, v_new = v + dt*a = 0.1, x_new = x + dt*v_new = 0.01 (explicit Euler)
         np.testing.assert_allclose(system.velocity, [0.1, 0.0])
         np.testing.assert_allclose(system.position, [0.01, 0.0])
 

@@ -44,11 +44,11 @@ class ExplicitEulerForward:
         # Compute external forces and couples
         SystemCollection.synchronize(simulation_time)
 
-        # Step
+        # Step (dynamics first so kinematics uses updated velocity)
         for system in SystemCollection.final_systems():
             system.update_accelerations(time)
-            system.update_kinematics(time, dt)
             system.update_dynamics(time, dt)
+            system.update_kinematics(time, dt)
 
         SystemCollection.constrain_values(simulation_time)
         SystemCollection.constrain_rates(simulation_time)
@@ -72,6 +72,6 @@ class ExplicitEulerForward:
         Perform one step for a single system instance (mainly for testing).
         """
         system.update_accelerations(time)
-        system.update_kinematics(time, dt)
         system.update_dynamics(time, dt)
+        system.update_kinematics(time, dt)
         return time + dt

@@ -688,6 +688,7 @@ source = { editable = "." }
 dependencies = [
     { name = "black" },
     { name = "pyelastica" },
+    { name = "pytest" },
 ]
 
 [package.optional-dependencies]
@@ -711,6 +712,7 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'" },
     { name = "mypy-extensions", marker = "extra == 'dev'" },
     { name = "pyelastica", git = "https://github.com/GazzolaLab/PyElastica.git?rev=update-v1" },
+    { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-mock", marker = "extra == 'dev'" },
     { name = "pytest-rng", marker = "extra == 'dev'" },
