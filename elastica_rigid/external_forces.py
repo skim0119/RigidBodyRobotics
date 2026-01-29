@@ -13,6 +13,7 @@ class ConstantForce(NoForces):
     def __init__(
         self,
         force: NDArray[np.float64],
+        duration: float,
     ) -> None:
         """
 
@@ -25,15 +26,15 @@ class ConstantForce(NoForces):
         """
         super().__init__()
         self._force = force
+        self._duration = np.float64(duration)
 
-    def apply_forces(
-        self, system, time: np.float64 = np.float64(0.0)
-    ) -> None:
-        self._compute_forces(self._force, system.mass, system.external_forces)
+    def apply_forces(self, system, time: np.float64 = np.float64(0.0)) -> None:
+        if time < self._duration:
+            self._compute_forces(self._force, system.mass, system.external_forces)
 
     @staticmethod
     @njit(cache=True)  # type: ignore
-    def compute_gravity_forces(
+    def _compute_forces(
         force: NDArray[np.float64],
         mass: NDArray[np.float64],
         external_forces: NDArray[np.float64],
@@ -68,9 +69,7 @@ class PotentialFieldForce(NoForces):
         super().__init__()
         self.K = np.float64(K)
 
-    def apply_forces(
-        self, system, time: np.float64 = np.float64(0.0)
-    ) -> None:
+    def apply_forces(self, system, time: np.float64 = np.float64(0.0)) -> None:
         """
         Apply potential field forces to the system.
 

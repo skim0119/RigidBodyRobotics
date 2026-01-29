@@ -10,8 +10,6 @@ from .equations import (
     _update_rigid_SO2_kinematic_state,
     _update_accelerations,
 )
-from .._so2 import from_d1
-from .._so3 import exp_so3, hat
 
 
 class Roomba(SystemProtocol):
@@ -144,6 +142,10 @@ class Roomba(SystemProtocol):
             radius=radius,
             width=width,
         )
+
+    def zeroed_out_external_forces_and_torques(self, time: np.float64) -> None:
+        self.external_forces[:] = 0.0
+        self.external_torques[:] = 0.0
 
     def compute_internal_forces_and_torques(self, time: np.float64) -> None:
         pass
