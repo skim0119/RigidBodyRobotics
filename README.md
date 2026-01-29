@@ -14,6 +14,12 @@ pip install "."
 python examples/project1/task1.py
 ```
 
+## How to pytest
+
+```sh
+pytest
+```
+
 ## Dev status
 
 - [x] Migrate PyElastica structure for rigid body and explicit-euler stepping
