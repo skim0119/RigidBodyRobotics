@@ -29,25 +29,25 @@ class CallBack(ea.CallBackBaseClass):
             self.callback_params["alpha"].append(system.alpha_collection.copy())
             self.callback_params["Tt"].append(system.compute_translational_energy())
             self.callback_params["Tr"].append(system.compute_rotational_energy())
+            self.callback_params["energy"].append(system.compute_rotational_energy())
             return
 
 
 def run(stepper, T=10.0, dt=0.01):
     sim = Simulator()
     sphere = ea.Sphere(center=np.zeros(3), base_radius=1, density=1e3)
-    sphere.omega_collection[:] = 1.0
+    sphere.omega_collection[:] = np.array(
+        [[1.0], [1.0], [0.5]]
+    )  # Initial angular velocity
     # To see the precession::
-    sphere.mass_second_moment_of_inertia[2,2,0] *= 1
-    sphere.inv_mass_second_moment_of_inertia[2,2,0] /= 1
+    sphere.mass_second_moment_of_inertia[2, 2, 0] *= 1
+    sphere.inv_mass_second_moment_of_inertia[2, 2, 0] /= 1
     sim.append(sphere)
 
-    # Simulation parameters
-    simulation_time = 10.0  # (sec)
-    dt = 0.01  # (sec)
-
     recorded_history = defaultdict(list)
+    step_skip = int(max(1, 1e-2 * (T / dt)))
     sim.collect_diagnostics(sphere).using(
-        CallBack, step_skip=10, callback_params=recorded_history
+        CallBack, step_skip=1, callback_params=recorded_history
     )
 
     sim.finalize()
@@ -79,11 +79,18 @@ time = np.array(results["time"])
 omega = np.array(results["omega"]).squeeze()
 alpha = np.array(results["alpha"]).squeeze()
 director = np.array(results["director"]).squeeze()  # Shape (T, 3, 3)
+energy = np.array(results["energy"]).squeeze()
 
 fig = plt.figure(figsize=(8, 6))
 ax = fig.add_subplot(111)
 ax.plot(time, omega)
 plt.savefig("omega.png")
+plt.close("all")
+
+fig = plt.figure(figsize=(8, 6))
+ax = fig.add_subplot(111)
+ax.plot(time, energy)
+plt.savefig("energy.png")
 plt.close("all")
 
 # Animation
@@ -95,6 +102,8 @@ def update(frame):
     ax.cla()
 
     current_director = director[frame]
+    rotation_axis_local = omega[frame] / np.linalg.norm(omega[frame])
+    rotation_axis_global = current_director.T @ rotation_axis_local
 
     # Plot the basis vectors (rows of the director matrix)
     colors = ["r", "g", "b"]
@@ -112,6 +121,20 @@ def update(frame):
             length=1.0,
             normalize=True,
         )
+
+    # Plot the rotation axis
+    ax.quiver(
+        0,
+        0,
+        0,
+        rotation_axis_global[0],
+        rotation_axis_global[1],
+        rotation_axis_global[2],
+        color="k",
+        label="Rotation Axis",
+        length=1.0,
+        normalize=True,
+    )
 
     ax.set_xlim([-1, 1])
     ax.set_ylim([-1, 1])
