@@ -1,61 +1,39 @@
 from collections import defaultdict
 import numpy as np
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 import elastica as ea
 import elastica_rigid as er
 
 
-class Simulator(
-    ea.BaseSystemCollection,
-    ea.Forcing,
-    ea.CallBacks,
-):
-    pass
-
-
-class CallBack(ea.CallBackBaseClass):
-    def __init__(self, step_skip: int, callback_params: dict):
-        super().__init__()
-        self.every = step_skip
-        self.callback_params = callback_params
-
-    def make_callback(self, system, time, current_step: int):
-        if current_step % self.every == 0:
-            self.callback_params["time"].append(time)
-            self.callback_params["position"].append(system.position_collection.copy())
-            self.callback_params["director"].append(system.director_collection.copy())
-            self.callback_params["omega"].append(system.omega_collection.copy())
-            self.callback_params["alpha"].append(system.alpha_collection.copy())
-            self.callback_params["Tt"].append(system.compute_translational_energy())
-            self.callback_params["Tr"].append(system.compute_rotational_energy())
-            self.callback_params["energy"].append(system.compute_rotational_energy())
-            return
-
-
 def run(stepper, T=10.0, dt=0.01):
-    sim = Simulator()
-    sphere = ea.Sphere(center=np.zeros(3), base_radius=1, density=1e3)
+    sphere = er.Sphere(center=np.zeros(3), base_radius=1, density=1e3)
     sphere.omega_collection[:] = np.array(
         [[1.0], [1.0], [0.5]]
     )  # Initial angular velocity
     # To see the precession::
     sphere.mass_second_moment_of_inertia[2, 2, 0] *= 1
     sphere.inv_mass_second_moment_of_inertia[2, 2, 0] /= 1
-    sim.append(sphere)
 
+    # Recording history
     recorded_history = defaultdict(list)
-    step_skip = int(max(1, 1e-2 * (T / dt)))
-    sim.collect_diagnostics(sphere).using(
-        CallBack, step_skip=1, callback_params=recorded_history
-    )
-
-    sim.finalize()
-    total_steps = int(T / dt)
+    step_skip = int(max(1, 1.0 / 30 / dt))
 
     time = 0.0
-    for i in range(total_steps):
-        time = stepper.step(sim, time, dt)
+    total_steps = int(T / dt)
+    for tidx in tqdm(range(total_steps)):
+        time = stepper.step_single_instance(sphere, time, dt)
+
+        if tidx % step_skip == 0:
+            recorded_history["time"].append(time)
+            recorded_history["position"].append(sphere.position_collection.copy())
+            recorded_history["director"].append(sphere.director_collection.copy())
+            recorded_history["omega"].append(sphere.omega_collection.copy())
+            recorded_history["alpha"].append(sphere.alpha_collection.copy())
+            recorded_history["Tt"].append(sphere.compute_translational_energy())
+            recorded_history["Tr"].append(sphere.compute_rotational_energy())
+            recorded_history["energy"].append(sphere.compute_rotational_energy())
 
     return recorded_history
 
@@ -68,7 +46,6 @@ timesteppers = {
 for name, stepper in timesteppers.items():
     results = run(stepper)
     break
-
 
 import matplotlib.animation as animation
 from mpl_toolkits.mplot3d import Axes3D
