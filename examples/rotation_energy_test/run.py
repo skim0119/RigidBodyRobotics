@@ -36,6 +36,9 @@ def run(stepper, T=10.0, dt=0.01):
     sim = Simulator()
     sphere = ea.Sphere(center=np.zeros(3), base_radius=1, density=1e3)
     sphere.omega_collection[:] = 1.0
+    # To see the precession::
+    sphere.mass_second_moment_of_inertia[2,2,0] *= 1
+    sphere.inv_mass_second_moment_of_inertia[2,2,0] /= 1
     sim.append(sphere)
 
     # Simulation parameters
