@@ -13,8 +13,8 @@ def run(stepper, T=10.0, dt=0.01):
         [[1.0], [1.0], [0.5]]
     )  # Initial angular velocity
     # To see the precession::
-    sphere.mass_second_moment_of_inertia[2, 2, 0] *= 1
-    sphere.inv_mass_second_moment_of_inertia[2, 2, 0] /= 1
+    sphere.mass_second_moment_of_inertia[2, 2, 0] *= 2
+    sphere.inv_mass_second_moment_of_inertia[2, 2, 0] /= 2
 
     # Recording history
     recorded_history = defaultdict(list)
@@ -29,6 +29,11 @@ def run(stepper, T=10.0, dt=0.01):
             recorded_history["time"].append(time)
             recorded_history["position"].append(sphere.position_collection.copy())
             recorded_history["director"].append(sphere.director_collection.copy())
+            iomega = (
+                sphere.mass_second_moment_of_inertia[:, :, 0]
+                @ sphere.omega_collection[:, 0]
+            )
+            recorded_history["Iomega"].append(iomega)
             recorded_history["omega"].append(sphere.omega_collection.copy())
             recorded_history["alpha"].append(sphere.alpha_collection.copy())
             recorded_history["Tt"].append(sphere.compute_translational_energy())
@@ -54,14 +59,21 @@ from mpl_toolkits.mplot3d import Axes3D
 # From list to array
 time = np.array(results["time"])
 omega = np.array(results["omega"]).squeeze()
+iomega = np.array(results["Iomega"]).squeeze()
 alpha = np.array(results["alpha"]).squeeze()
 director = np.array(results["director"]).squeeze()  # Shape (T, 3, 3)
 energy = np.array(results["energy"]).squeeze()
 
 fig = plt.figure(figsize=(8, 6))
 ax = fig.add_subplot(111)
-ax.plot(time, omega)
+ax.plot(time, np.einsum("ikj,ik->ij", director, omega))
 plt.savefig("omega.png")
+plt.close("all")
+
+fig = plt.figure(figsize=(8, 6))
+ax = fig.add_subplot(111)
+ax.plot(time, np.einsum("ikj,ik->ij", director, iomega))
+plt.savefig("iomega.png")
 plt.close("all")
 
 fig = plt.figure(figsize=(8, 6))
@@ -81,6 +93,8 @@ def update(frame):
     current_director = director[frame]
     rotation_axis_local = omega[frame] / np.linalg.norm(omega[frame])
     rotation_axis_global = current_director.T @ rotation_axis_local
+    angular_momentum_axis_local = iomega[frame] / np.linalg.norm(iomega[frame])
+    angular_momentum_axis_global = current_director.T @ angular_momentum_axis_local
 
     # Plot the basis vectors (rows of the director matrix)
     colors = ["r", "g", "b"]
@@ -109,6 +123,18 @@ def update(frame):
         rotation_axis_global[2],
         color="k",
         label="Rotation Axis",
+        length=1.0,
+        normalize=True,
+    )
+    ax.quiver(
+        0,
+        0,
+        0,
+        angular_momentum_axis_global[0],
+        angular_momentum_axis_global[1],
+        angular_momentum_axis_global[2],
+        color="Orange",
+        label="angular momentum",
         length=1.0,
         normalize=True,
     )
