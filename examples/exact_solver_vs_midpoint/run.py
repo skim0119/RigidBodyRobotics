@@ -4,12 +4,42 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 import elastica as ea
+from elastica._linalg import _batch_matvec
+
 import elastica_rigid as er
+from elastica_rigid._rotations import _rotate_vector
+
+
+class SphereWithExactAngMomentum(er.Sphere):
+    def update_accelerations(self, time: np.float64) -> None:
+        np.copyto(
+            self.acceleration_collection,
+            (self.external_forces) / self.mass,
+        )
+
+        # I apply common sub expression elimination here, as J w
+        current_angular_momentum = _batch_matvec(
+            self.mass_second_moment_of_inertia, self.omega_collection
+        )
+        omega_mag = np.linalg.norm(self.omega_collection[:, 0], axis=0)
+        co_adjointed_angular_momentum = _rotate_vector(
+            current_angular_momentum,
+            scale=1.0,
+            axis_collection=self.omega_collection * self.dt,
+        )
+        momentum_change = (
+            _batch_matvec(
+                self.inv_mass_second_moment_of_inertia,
+                co_adjointed_angular_momentum,
+            )
+            - self.omega_collection
+        )
+        self.alpha_collection[:] = momentum_change / self.dt
 
 
 def run(stepper, T=10.0, dt=0.00001, fps=60):
-    sphere = er.SphereImplicit(center=np.zeros(3), base_radius=1, density=1e3)
-    sphere.dt = dt  # FIXME: Temporary
+    sphere = SphereWithExactAngMomentum(center=np.zeros(3), base_radius=1, density=1e3)
+    sphere.dt = dt  # FIXME: temporary, stepping schema needs dt.
     sphere.omega_collection[:] = np.array(
         [[0.01], [15.0], [0.01]]
     )  # Initial angular velocity
