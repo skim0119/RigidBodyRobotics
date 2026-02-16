@@ -129,3 +129,14 @@ def overload_operator_dynamic_numba(
     for i in range(3):
         for k in range(blocksize):
             omega_collection[i, k] += prefac * alpha_collection[i, k]
+
+# Variations of the Sphere class implementations
+from .mixin.exact_angular_momentum_formula import WithExactAngMomentum
+
+class SphereExact(WithExactAngMomentum, Sphere):
+    pass
+
+from .mixin.midpoint_angular_momentum import WithMidpointAngMomentum
+
+class SphereImplicit(WithMidpointAngMomentum, Sphere):
+    pass
