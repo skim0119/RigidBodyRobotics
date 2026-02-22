@@ -11,7 +11,6 @@ import elastica_rigid as er
 from elastica_rigid._rotations import _rotate_vector
 
 
-
 def predict_deltaE(sphere, dt: float) -> float:
     """
     For rigid-body explicit Euler on omega:
@@ -47,7 +46,6 @@ def run(
 ):
     stepper = ea.PositionVerlet()
     sphere = er.SphereExact(center=np.zeros(3), base_radius=1, density=1e3)
-    sphere.dt = dt
 
     sphere.omega_collection[:] = np.array([[0.01], [15.0], [0.01]])
     sphere.mass_second_moment_of_inertia[1, 1, 0] *= 2
@@ -71,14 +69,16 @@ def run(
             recorded_history["time"].append(time)
             recorded_history["position"].append(sphere.position_collection.copy())
             recorded_history["director"].append(sphere.director_collection.copy())
-            iomega = sphere.mass_second_moment_of_inertia[:, :, 0] @ sphere.omega_collection[
-                :, 0
-            ]
+            iomega = (
+                sphere.mass_second_moment_of_inertia[:, :, 0]
+                @ sphere.omega_collection[:, 0]
+            )
             recorded_history["Iomega"].append(iomega)
             recorded_history["omega"].append(sphere.omega_collection.copy())
             recorded_history["alpha"].append(sphere.alpha_collection.copy())
 
     return recorded_history
+
 
 if __name__ == "__main__":
     T_FINAL = 10.0
@@ -138,7 +138,13 @@ if __name__ == "__main__":
 
     axD = axE.twinx()
     t_mid = time_step[:-1]  # ΔE_n aligned to [t_n, t_{n+1})
-    axD.plot(time_step, deltaE_pred_step, color="C1", linestyle="--", label="ΔE_pred = dt^2/2 * c^T I^{-1} c")
+    axD.plot(
+        time_step,
+        deltaE_pred_step,
+        color="C1",
+        linestyle="--",
+        label="ΔE_pred = dt^2/2 * c^T I^{-1} c",
+    )
     axD.set_ylabel("per-step energy increment", color="C1")
     axD.tick_params(axis="y", labelcolor="C1")
 
@@ -215,8 +221,9 @@ if __name__ == "__main__":
         ax.legend()
         ax.grid(True)
 
-
-    ani = animation.FuncAnimation(fig, update, frames=len(time_step), interval=50, blit=False)
+    ani = animation.FuncAnimation(
+        fig, update, frames=len(time_step), interval=50, blit=False
+    )
 
     # Save the animation as an MP4 file
     Writer = animation.writers["ffmpeg"]

@@ -11,7 +11,6 @@ import matplotlib.animation as animation
 
 def run(stepper, T=10.0, dt=0.00001, fps=60):
     sphere = er.SphereImplicit(center=np.zeros(3), base_radius=1, density=1e3)
-    sphere.dt = dt  # FIXME: Temporary
     sphere.omega_collection[:] = np.array(
         [[0.01], [15.0], [0.01]]
     )  # Initial angular velocity

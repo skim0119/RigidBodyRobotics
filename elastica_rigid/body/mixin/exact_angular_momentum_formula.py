@@ -9,6 +9,7 @@ from elastica_rigid._rotations import _rotate_vector
 from ..sphere import Sphere
 from .utils import only_mix_into
 
+
 @only_mix_into(Sphere, RigidBodyBase)
 class WithExactAngMomentum:
     """
@@ -20,7 +21,6 @@ class WithExactAngMomentum:
     """
 
     # Required attributes:
-    dt: np.float64
     acceleration_collection: NDArray[np.float64]
     external_forces: NDArray[np.float64]
     mass_second_moment_of_inertia: NDArray[np.float64]
@@ -29,7 +29,7 @@ class WithExactAngMomentum:
     alpha_collection: NDArray[np.float64]
     mass: np.float64
 
-    def update_accelerations(self, time: np.float64) -> None:
+    def update_accelerations(self, time: np.float64, dt: np.float64) -> None:
         # Linear acceleration update
         np.copyto(
             self.acceleration_collection,
@@ -43,7 +43,7 @@ class WithExactAngMomentum:
         co_adjointed_angular_momentum = _rotate_vector(
             current_angular_momentum,
             scale=1.0,
-            axis_collection=self.omega_collection * self.dt,
+            axis_collection=self.omega_collection * dt,
         )
         momentum_change = (
             _batch_matvec(
@@ -52,4 +52,4 @@ class WithExactAngMomentum:
             )
             - self.omega_collection
         )
-        self.alpha_collection[:] = momentum_change / self.dt
+        self.alpha_collection[:] = momentum_change / dt

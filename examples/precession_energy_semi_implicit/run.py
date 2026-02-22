@@ -16,7 +16,6 @@ def run(stepper, T=100.0, dt=0.01):
     sphere.inv_mass_second_moment_of_inertia[2, 2, 0] /= 10
 
     isphere = er.SphereImplicit(center=np.zeros(3), base_radius=1, density=1e3)
-    isphere.dt = dt  # FIXME: This is quick fix to put dt in update_accelerations.
     isphere.omega_collection[:] = np.array(
         [[1.0], [1.0], [0.5]]
     )  # Initial angular velocity
