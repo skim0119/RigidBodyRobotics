@@ -6,6 +6,8 @@ from tqdm import tqdm
 import elastica as ea
 import elastica_rigid as er
 
+import matplotlib.animation as animation
+
 
 def run(stepper, T=10.0, dt=0.00001, fps=60):
     sphere = er.SphereImplicit(center=np.zeros(3), base_radius=1, density=1e3)
@@ -42,23 +44,21 @@ def run(stepper, T=10.0, dt=0.00001, fps=60):
             recorded_history["Tt"].append(sphere.compute_translational_energy())
             recorded_history["Tr"].append(sphere.compute_rotational_energy())
             recorded_history["energy"].append(sphere.compute_rotational_energy())
+            # Implicit midpoint diagnostics (from SphereImplicit.update_accelerations)
+            recorded_history["implicit_equation_residual"].append(
+                float(getattr(sphere, "implicit_midpoint_equation_residual", np.nan))
+            )
+            recorded_history["implicit_iterations"].append(
+                int(getattr(sphere, "implicit_midpoint_iterations", -1))
+            )
 
     return recorded_history
 
 
 fps = 60
 
-timesteppers = {
-    # "ExplicitEulerForward": er.ExplicitEulerForward(),
-    # "SymplecticEulerForward": er.SymplecticEulerForward(),
-    "PositionVerlet": ea.PositionVerlet(),
-}
-for name, stepper in timesteppers.items():
-    results = run(stepper, fps=fps)
-    break
-
-import matplotlib.animation as animation
-from mpl_toolkits.mplot3d import Axes3D
+timestepper = ea.PositionVerlet()
+results = run(timestepper, fps=fps)
 
 # Post-processing
 # From list to array
@@ -68,6 +68,8 @@ iomega = np.array(results["Iomega"]).squeeze()
 alpha = np.array(results["alpha"]).squeeze()
 director = np.array(results["director"]).squeeze()  # Shape (T, 3, 3)
 energy = np.array(results["energy"]).squeeze()
+implicit_equation_residual = np.array(results["implicit_equation_residual"]).squeeze()
+implicit_iterations = np.array(results["implicit_iterations"]).squeeze()
 
 fig = plt.figure(figsize=(8, 6))
 ax = fig.add_subplot(111)
@@ -85,6 +87,24 @@ fig = plt.figure(figsize=(8, 6))
 ax = fig.add_subplot(111)
 ax.plot(time, energy)
 plt.savefig("energy.png")
+plt.close("all")
+
+# Implicit solver diagnostics: equation residual and iteration count
+fig = plt.figure(figsize=(9, 6))
+ax1 = fig.add_subplot(211)
+ax1.semilogy(time, implicit_equation_residual + 1e-20, "C0-")
+ax1.set_ylabel("Equation residual ||F(ω_{n+1})||")
+ax1.grid(True, alpha=0.25)
+
+ax2 = fig.add_subplot(212, sharex=ax1)
+ax2.plot(time, implicit_iterations, "C1-")
+ax2.set_xlabel("Time (s)")
+ax2.set_ylabel("Implicit iterations")
+ax2.grid(True, alpha=0.25)
+
+fig.suptitle("Implicit midpoint solver diagnostics")
+fig.tight_layout()
+plt.savefig("implicit_solver_diagnostics.png")
 plt.close("all")
 
 # Animation
