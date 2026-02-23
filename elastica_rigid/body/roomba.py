@@ -151,7 +151,7 @@ class Roomba(SystemProtocol):
         pass
 
     # Interface to time-stepper mixins (Symplectic, Explicit), which calls this method
-    def update_accelerations(self, time: np.float64) -> None:
+    def update_accelerations(self, time: np.float64, dt: np.float64) -> None:
         _update_accelerations(
             self.acceleration,
             self.alpha,

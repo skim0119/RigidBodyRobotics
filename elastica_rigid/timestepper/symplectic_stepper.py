@@ -37,7 +37,7 @@ class SymplecticEulerForward:
 
         # Step: dynamics first, then kinematics (symplectic order)
         for system in SystemCollection.final_systems():
-            system.update_accelerations(time)
+            system.update_accelerations(time, dt)
             system.update_dynamics(time, dt)
             system.update_kinematics(time, dt)
 
@@ -62,7 +62,7 @@ class SymplecticEulerForward:
         """
         Perform one step for a single system instance (mainly for testing).
         """
-        system.update_accelerations(time)
+        system.update_accelerations(time, dt)
         system.update_dynamics(time, dt)
         system.update_kinematics(time, dt)
         return time + dt

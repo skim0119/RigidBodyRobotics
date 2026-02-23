@@ -88,7 +88,6 @@ class WithMidpointAngMomentum:
     """
 
     # Required attributes:
-    dt: np.float64
     acceleration_collection: NDArray[np.float64]
     external_forces: NDArray[np.float64]
     mass_second_moment_of_inertia: NDArray[np.float64]
@@ -97,9 +96,8 @@ class WithMidpointAngMomentum:
     alpha_collection: NDArray[np.float64]
     mass: np.float64
 
-    def update_accelerations(self, time: np.float64) -> None:
+    def update_accelerations(self, time: np.float64, dt: np.float64) -> None:
         # Linear acceleration update (same)
-        dt = self.dt  # timestepper should pass dt into this function
         np.copyto(
             self.acceleration_collection,
             (self.external_forces) / self.mass,
