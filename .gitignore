@@ -7,6 +7,8 @@ __pycache__/
 *.so
 
 *.png
+*.json
+*.npz
 *.pdf
 *.mp4
 *.swp
