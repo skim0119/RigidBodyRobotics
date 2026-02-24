@@ -8,4 +8,6 @@ from .external_forces import (
     WheelForceSequence,
     EnvironmentForces2D,
 )
-from .visualize.robot_on_field import Visualize
+from .visualize import Visualize
+from .visualize.tk_app.config import UiConfig, DEFAULT_UI_CONFIG
+from .visualize.tk_app.view_tk import TkView2D
