@@ -23,6 +23,7 @@ requires-python = ">=3.12"
 
 dependencies = [
     "black>=26.1.0",
+    "opencv-python>=4.13.0.92",
     "pyelastica @ git+https://github.com/GazzolaLab/PyElastica.git@update-v1",
     "pytest>=9.0.2",
 ]
