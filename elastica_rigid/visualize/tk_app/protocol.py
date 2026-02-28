@@ -3,28 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, Sequence
 
+from .characters import BaseCharacter2D
 
-# TODO: Maybe move to common style file?
-COLOR_OBJECT_BODY = "#4cc9f0"
-COLOR_OBJECT_HEADING = "#f9844a"
+
 COLOR_TARGET_MARKER = "#90be6d"
 COLOR_TARGET_HEADING = "#90be6d"
 COLOR_TRAIL = "#6c757d"
-
-
-@dataclass(frozen=True)
-class ObjectPose2D:
-    """Renderable 2D object pose and style."""
-
-    x: float
-    y: float
-    dir_x: float
-    dir_y: float
-    radius: float
-    heading_length: float
-
-    body_color: str = COLOR_OBJECT_BODY
-    heading_color: str = COLOR_OBJECT_HEADING
 
 
 @dataclass(frozen=True)
@@ -71,9 +55,9 @@ class PlotPanel:
 class ModelProtocol(Protocol):
     """Minimal query contract required by TkView2D."""
 
-    def get_object_poses(self) -> Sequence[ObjectPose2D]: ...
+    def get_object_poses(self) -> Sequence[BaseCharacter2D]: ...
 
-    def get_target_pose(self) -> TargetPose2D: ...
+    def get_target_pose(self) -> TargetPose2D | None: ...
 
     def get_trails(self) -> Sequence[Trail2D]: ...
 

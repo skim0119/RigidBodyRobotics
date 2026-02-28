@@ -4,10 +4,13 @@ from dataclasses import dataclass
 import math
 import tkinter as tk
 
+from .characters import BaseCharacter2D
 from .config import UiConfig, DEFAULT_UI_CONFIG
 from .protocol import (
     ModelProtocol,
     PlotPanel,
+    TargetPose2D,
+    Trail2D,
 )
 
 # TODO: Maybe move to common style file?
@@ -35,10 +38,11 @@ class TkView2D(tk.Frame):
         ```python
         import tkinter as tk
         from elastica_rigid.visualize.tk_app import TkView2D
+        from elastica_rigid.visualize.tk_app import CirclePose2D
 
         class DummyModel:
             def get_object_poses(self):
-                return [ObjectPose2D(x=120, y=120, dir_x=1.0, dir_y=0.0, radius=20, heading_length=30)]
+                return [CirclePose2D(x=120, y=120, dir_x=1.0, dir_y=0.0, radius=20, heading_length=30)]
 
             def get_target_pose(self):
                 return TargetPose2D(x=200, y=150, theta=0.3, marker_radius=6, heading_length=30)
@@ -59,7 +63,11 @@ class TkView2D(tk.Frame):
         ```
     """
 
-    def __init__(self, parent: tk.Tk, ui_config: UiConfig = DEFAULT_UI_CONFIG) -> None:
+    def __init__(
+        self,
+        parent: tk.Tk,
+        ui_config: UiConfig = DEFAULT_UI_CONFIG,
+    ) -> None:
         """Initialize the two-panel Tk view and key bindings."""
         super().__init__(parent, bg=COLOR_BACKGROUND)
         self.root = parent
@@ -83,6 +91,13 @@ class TkView2D(tk.Frame):
         self.bind_all("<P>", self._on_toggle_plots)
         self.bind_all("<Escape>", self._on_escape)
 
+        # Retained-mode caches for left canvas.
+        self._object_items: dict[int, BaseCharacter2D] = {}
+        self._trail_items: dict[int, int] = {}
+        self._target_marker_id: int | None = None
+        self._target_heading_id: int | None = None
+        self._hud_id: int | None = None
+
         # Initialize
         self._build_columns()
 
@@ -105,20 +120,21 @@ class TkView2D(tk.Frame):
 
     def render(self, model: ModelProtocol) -> None:
         """Draw one frame from model query data."""
-        self.left_canvas.delete("all")
-        self.right_canvas.delete("all")
-
-        # Left Column
-        if _trails := model.get_trails():
-            self._draw_trails(_trails)
-        if _target := model.get_target_pose():
-            self._draw_target(_target)
-        if _objects := model.get_object_poses():
-            self._draw_objects(_objects)
+        # Left column uses retained-mode updates to reduce item churn.
+        trails = list(model.get_trails() or [])
+        self._draw_trails(trails)
+        self._draw_target(model.get_target_pose())
+        objects = list(model.get_object_poses() or [])
+        self._draw_objects(objects)
         if self._show_hud:
             self_hud = self.get_hud_text()
             model_hud = model.get_hud_text()
             self._draw_hud(self_hud, model_hud)
+        else:
+            self._draw_hud()
+
+        # Right column remains immediate-mode redraw.
+        self.right_canvas.delete("all")
 
         # Right Column
         if self._show_plots and (_plot_data := model.get_plotting_data()):
@@ -183,63 +199,105 @@ class TkView2D(tk.Frame):
     # -- Drawing --
 
     def _draw_trails(self, trails: list[Trail2D]) -> None:
-        for trail in trails:
-            if len(trail.points) < 2:
+        for idx, trail in enumerate(trails):
+            points_flat: list[float] = []
+            for x, y in trail.points:
+                points_flat.extend([x, y])
+
+            item_id = self._trail_items.get(idx)
+            if len(points_flat) < 4:
+                if item_id is not None:
+                    self.left_canvas.coords(item_id, 0, 0, 0, 0)
                 continue
-            for i in range(1, len(trail.points)):
-                x0, y0 = trail.points[i - 1]
-                x1, y1 = trail.points[i]
-                self.left_canvas.create_line(
-                    x0,
-                    y0,
-                    x1,
-                    y1,
+
+            if item_id is None:
+                item_id = self.left_canvas.create_line(
+                    *points_flat,
                     fill=trail.color,
                     width=trail.width,
                 )
+                self._trail_items[idx] = item_id
+            else:
+                self.left_canvas.coords(item_id, *points_flat)
+                self.left_canvas.itemconfigure(
+                    item_id, fill=trail.color, width=trail.width
+                )
 
-    def _draw_target(self, target: TargetPose2D) -> None:
+        stale = [k for k in self._trail_items if k >= len(trails)]
+        for k in stale:
+            self.left_canvas.delete(self._trail_items[k])
+            del self._trail_items[k]
+
+    def _draw_target(self, target: TargetPose2D | None) -> None:
+        if target is None:
+            if self._target_marker_id is not None:
+                self.left_canvas.delete(self._target_marker_id)
+                self._target_marker_id = None
+            if self._target_heading_id is not None:
+                self.left_canvas.delete(self._target_heading_id)
+                self._target_heading_id = None
+            return
+
         d = target.marker_radius
-        self.left_canvas.create_oval(
-            target.x - d,
-            target.y - d,
-            target.x + d,
-            target.y + d,
-            outline=target.marker_color,
-            width=2,
-        )
-        self.left_canvas.create_line(
-            target.x,
-            target.y,
-            target.x + target.heading_length * math.cos(target.theta),
-            target.y + target.heading_length * math.sin(target.theta),
-            fill=target.heading_color,
-            width=3,
-            dash=(8, 6),
-            arrow=tk.LAST,
-            arrowshape=(10, 12, 4),
-        )
+        marker_coords = (target.x - d, target.y - d, target.x + d, target.y + d)
+        hx = target.x + target.heading_length * math.cos(target.theta)
+        hy = target.y + target.heading_length * math.sin(target.theta)
 
-    def _draw_objects(self, objects: list[ObjectPose2D]) -> None:
-        for pose in objects:
-            self.left_canvas.create_oval(
-                pose.x - pose.radius,
-                pose.y - pose.radius,
-                pose.x + pose.radius,
-                pose.y + pose.radius,
-                fill=pose.body_color,
-                outline="",
+        if self._target_marker_id is None:
+            self._target_marker_id = self.left_canvas.create_oval(
+                *marker_coords,
+                outline=target.marker_color,
+                width=2,
             )
-            self.left_canvas.create_line(
-                pose.x,
-                pose.y,
-                pose.x + pose.heading_length * pose.dir_x,
-                pose.y + pose.heading_length * pose.dir_y,
-                fill=pose.heading_color,
-                width=4,
+        else:
+            self.left_canvas.coords(self._target_marker_id, *marker_coords)
+            self.left_canvas.itemconfigure(
+                self._target_marker_id,
+                outline=target.marker_color,
+                width=2,
+            )
+
+        if self._target_heading_id is None:
+            self._target_heading_id = self.left_canvas.create_line(
+                target.x,
+                target.y,
+                hx,
+                hy,
+                fill=target.heading_color,
+                width=3,
+                dash=(8, 6),
                 arrow=tk.LAST,
-                arrowshape=(11, 14, 5),
+                arrowshape=(10, 12, 4),
             )
+        else:
+            self.left_canvas.coords(self._target_heading_id, target.x, target.y, hx, hy)
+            self.left_canvas.itemconfigure(
+                self._target_heading_id,
+                fill=target.heading_color,
+                width=3,
+                dash=(8, 6),
+            )
+
+    def _draw_objects(self, objects: list[BaseCharacter2D]) -> None:
+        for idx, pose in enumerate(objects):
+            prev = self._object_items.get(idx)
+            if prev is None:  # Does not exist
+                pose.draw(self.left_canvas, idx)
+                self._object_items[idx] = pose
+                continue
+
+            if type(prev) is not type(pose):
+                prev.delete(self.left_canvas, idx)
+                pose.draw(self.left_canvas, idx)
+                self._object_items[idx] = pose
+            else:
+                pose.move(self.left_canvas, idx)
+                self._object_items[idx] = pose
+
+        stale = [k for k in self._object_items if k >= len(objects)]
+        for k in stale:
+            self._object_items[k].delete(self.left_canvas, k)
+            del self._object_items[k]
 
     def _draw_line_plot(
         self,
@@ -360,11 +418,18 @@ class TkView2D(tk.Frame):
 
     def _draw_hud(self, *huds: str) -> None:
         hud_text = "\n".join(huds)
-        self.left_canvas.create_text(
-            14,
-            14,
-            text=hud_text,
-            fill=COLOR_TEXT,
-            font=("Menlo", 14),
-            anchor="nw",
-        )
+
+        if self._hud_id is None:
+            # Create new hud
+            self._hud_id = self.left_canvas.create_text(
+                14,
+                14,
+                text=hud_text,
+                fill=COLOR_TEXT,
+                font=("Menlo", 14),
+                anchor="nw",
+            )
+        else:
+            # Change existing hud
+            self.left_canvas.coords(self._hud_id, 14, 14)
+            self.left_canvas.itemconfigure(self._hud_id, text=hud_text)
