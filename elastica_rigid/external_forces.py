@@ -38,7 +38,9 @@ def compute_wheel_forces_to_external(
     director[:, 1] = d2
 
     external_forces += director @ (left_wheel_force + right_wheel_force)
-    external_torques += (track_width / 2) * (-left_wheel_force + right_wheel_force)
+    external_torques[0] += (track_width / 2) * (
+        -left_wheel_force[0] + right_wheel_force[0]
+    )
 
 
 @njit(cache=True)  # type: ignore
@@ -269,11 +271,11 @@ class ConstantForce(NoForces):
     def apply_forces(self, system, time: np.float64 = np.float64(0.0)) -> None:
         if time < self._duration:
             compute_wheel_forces_to_external(
-                system.direction,
+                system.direction[:, 0],
                 self._left_wheel_force,
                 self._right_wheel_force,
-                system.width,
-                system.external_forces,
+                system.width[0],
+                system.external_forces[:, 0],
                 system.external_torques,
             )
 
@@ -311,14 +313,14 @@ class PotentialFieldForce(NoForces):
         left_wheel_force = right_wheel_force = [u, 0] in body frame.
         """
         left_wheel_force, right_wheel_force = compute_potential_field_wheel_forces(
-            system.position, system.direction, self._K
+            system.position[:, 0], system.direction[:, 0], self._K
         )
         compute_wheel_forces_to_external(
-            system.direction,
+            system.direction[:, 0],
             left_wheel_force,
             right_wheel_force,
-            system.width,
-            system.external_forces,
+            system.width[0],
+            system.external_forces[:, 0],
             system.external_torques,
         )
 
@@ -359,11 +361,11 @@ class WheelForceSequence(NoForces):
         left_wheel_force = np.array([ul, 0.0], dtype=np.float64)
         right_wheel_force = np.array([ur, 0.0], dtype=np.float64)
         compute_wheel_forces_to_external(
-            system.direction,
+            system.direction[:, 0],
             left_wheel_force,
             right_wheel_force,
-            system.width,
-            system.external_forces,
+            system.width[0],
+            system.external_forces[:, 0],
             system.external_torques,
         )
 
@@ -403,8 +405,8 @@ class EnvironmentForces2D(NoForces):
         self.callback_params = callback_params
 
     def apply_forces(self, system, time: np.float64 = np.float64(0.0)) -> None:
-        x = system.position
-        d1 = system.direction
+        x = system.position[:, 0]
+        d1 = system.direction[:, 0]
         R = np.array(
             [
                 [np.cos(np.pi / 2), -np.sin(np.pi / 2)],
@@ -412,10 +414,10 @@ class EnvironmentForces2D(NoForces):
             ]
         )
         d2 = R @ d1
-        half_width = np.float64(system.width / 2.0)
+        half_width = np.float64(system.width[0] / 2.0)
         x_left = x + d2 * half_width
         x_right = x - d2 * half_width
-        v = system.velocity
+        v = system.velocity[:, 0]
         omega = system.omega[0]
 
         fric_eps = np.float64(self._fric_eps)
@@ -431,11 +433,11 @@ class EnvironmentForces2D(NoForces):
             self._fric_a,
             self._fric_b,
             self._mu_f,
-            np.float64(system.mass),
+            np.float64(system.mass[0]),
             fric_eps,
         )
-        system.external_forces += f_mag_r * f_dir_r
-        system.external_torques += torque_z_from_force_2d(
+        system.external_forces[:, 0] += f_mag_r * f_dir_r
+        system.external_torques[0] += torque_z_from_force_2d(
             -d2 * half_width, f_dir_r, f_mag_r
         )
         self.callback_params["right_friction_force_mag"].append(float(f_mag_r))
@@ -452,11 +454,11 @@ class EnvironmentForces2D(NoForces):
             self._fric_a,
             self._fric_b,
             self._mu_f,
-            np.float64(system.mass),
+            np.float64(system.mass[0]),
             fric_eps,
         )
-        system.external_forces += f_mag_l * f_dir_l
-        system.external_torques += torque_z_from_force_2d(
+        system.external_forces[:, 0] += f_mag_l * f_dir_l
+        system.external_torques[0] += torque_z_from_force_2d(
             d2 * half_width, f_dir_l, f_mag_l
         )
         self.callback_params["left_friction_force_mag"].append(float(f_mag_l))
@@ -464,9 +466,9 @@ class EnvironmentForces2D(NoForces):
 
         # Boundary penalty
         xmin, xmax, ymin, ymax = self._bounds
-        r = np.float64(system.radius)
+        r = np.float64(system.radius[0])
         k = self._mu_c
-        system.external_forces += boundary_penetration_forces(
+        system.external_forces[:, 0] += boundary_penetration_forces(
             x, r, xmin, xmax, ymin, ymax, k
         )
 
@@ -474,6 +476,6 @@ class EnvironmentForces2D(NoForces):
         for oxmin, oxmax, oymin, oymax in self._obstacles:
             mins = np.array([oxmin, oymin], dtype=np.float64)
             maxs = np.array([oxmax, oymax], dtype=np.float64)
-            system.external_forces += contact_force_circle_vs_aabb(
+            system.external_forces[:, 0] += contact_force_circle_vs_aabb(
                 x, r, mins, maxs, k, fric_eps
             )

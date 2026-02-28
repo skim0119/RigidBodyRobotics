@@ -76,11 +76,11 @@ class CallBack(ea.CallBackBaseClass):
     def make_callback(self, system, time, current_step: int):
         if current_step % self.every == 0:
             self.callback_params["time"].append(time)
-            self.callback_params["position"].append(system.position.copy())
-            self.callback_params["direction"].append(system.direction.copy())
+            self.callback_params["position"].append(system.position[:, 0].copy())
+            self.callback_params["direction"].append(system.direction[:, 0].copy())
             # Linear speed w_t = ||v_t|| (same as ||η_t||/m since η = m*v)
             self.callback_params["linear_speed"].append(
-                np.linalg.norm(system.velocity.copy())
+                np.linalg.norm(system.velocity[:, 0].copy())
             )
             # Angular velocity ω_t (rad/s)
             self.callback_params["angular_velocity"].append(float(system.omega[0]))
@@ -108,9 +108,9 @@ for i in range(total_steps):
 # Net force in inertial: F_net = (F_l + F_r) @ director = 0.1 * d1(t) → a(t) = (0.1/m) * d1(t).
 # Torque from wheel forces: τ = (track_width/2) * (F_l - F_r)_forward → α = τ/I = const.
 # So ω(t) = ω_0 + α*t = α*t, θ(t) = (1/2)*α*t²; v(t) = ∫_0^t a(s) ds involves Fresnel integrals.
-m = float(robot.mass)
-inertia = float(robot.inertia)
-track_width = float(robot.width)
+m = float(robot.mass[0])
+inertia = float(robot.inertia[0])
+track_width = float(robot.width[0])
 
 t_num = np.array(recorded_history["time"])
 linear_speed_num = np.array(recorded_history["linear_speed"])

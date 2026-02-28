@@ -46,8 +46,8 @@ def _update_accelerations(
     Update <acceleration and angular acceleration> given <internal force/torque and external force/torque>.
     """
 
-    acceleration[:] = external_forces / mass
-    alpha[:] = external_torques / inertia
+    acceleration[:] = external_forces / mass[0]
+    alpha[:] = external_torques / inertia[0]
 
 
 @numba.njit(cache=True)  # type: ignore
@@ -56,20 +56,6 @@ def _zeroed_out_external_forces_and_torques(
 ) -> None:
     """
     This function is to zeroed out external forces and torques.
-
-    Notes
-    -----
-    Microbenchmark results 100 elements
-    python version: 3.32 µs ± 44.5 ns per loop (mean ± std. dev. of 7 runs, 100000 loops each)
-    this version: 583 ns ± 1.94 ns per loop (mean ± std. dev. of 7 runs, 1000000 loops each)
     """
-    n_nodes = external_forces.shape[1]
-    n_elems = external_torques.shape[1]
-
-    for i in range(3):
-        for k in range(n_nodes):
-            external_forces[i, k] = 0.0
-
-    for i in range(3):
-        for k in range(n_elems):
-            external_torques[i, k] = 0.0
+    external_forces[:] = 0.0
+    external_torques[:] = 0.0
