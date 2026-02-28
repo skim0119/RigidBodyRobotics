@@ -5,10 +5,11 @@ from numpy.typing import NDArray
 import numpy as np
 from elastica.systems.protocol import SystemProtocol
 
-from .equations import (
+from ._se2_equations import (
     _update_rigid_SO2_dynamic_state,
     _update_rigid_SO2_kinematic_state,
     _update_accelerations,
+    _zeroed_out_external_forces_and_torques,
 )
 
 
@@ -48,7 +49,7 @@ class Roomba(SystemProtocol):
         mass : float
             Mass of the robot in kg
         inertia : float
-            Moment of inertia about the vertical axis in kg·m²
+            Moment of inertia about the vertical axis in kg*m^2²
         radius : float
             Wheel radius in meters
         width : float
@@ -56,7 +57,7 @@ class Roomba(SystemProtocol):
         initial_velocity : np.ndarray, optional
             2D initial linear velocity [vx, vy] in m/s. If None, defaults to zero.
         initial_acceleration : np.ndarray, optional
-            2D initial linear acceleration [ax, ay] in m/s². If None, defaults to zero.
+            2D initial linear acceleration [ax, ay] in m/s^2. If None, defaults to zero.
         initial_omega : float or np.ndarray, optional
             Initial angular velocity in rad/s (scalar or shape (1,)). If None, defaults to zero.
         initial_alpha : float or np.ndarray, optional
@@ -64,25 +65,27 @@ class Roomba(SystemProtocol):
         """
 
         # Store physical parameters
-        self.mass = np.float64(mass)
-        self.inertia = np.float64(inertia)
-        self.radius = np.float64(radius)
-        self.width = np.float64(width)
+        self.mass = np.array([mass], dtype=np.float64)
+        self.inertia = np.array([inertia], dtype=np.float64)
+        self.radius = np.array([radius], dtype=np.float64)
+        self.width = np.array([width], dtype=np.float64)
 
-        # Convert 2D position to 3D [x, y, 0]
-        self.position = np.array(position, dtype=float)
-        self.direction = np.array(direction, dtype=float)
+        self.position[:, 0] = position
+        self.direction[:, 0] = direction
+        dnorm = np.linalg.norm(self.direction[:, 0])
+        if dnorm > 1e-12:
+            self.direction[:, 0] /= dnorm
 
         # Initialize velocities and accelerations
         if initial_velocity is not None:
-            self.velocity = np.asarray(initial_velocity, dtype=np.float64)
+            self.velocity[:, 0] = initial_velocity
         else:
-            self.velocity = np.zeros((2,), dtype=np.float64)
+            self.velocity = np.zeros((2, 1), dtype=np.float64)
 
         if initial_acceleration is not None:
-            self.acceleration = np.asarray(initial_acceleration, dtype=np.float64)
+            self.acceleration[:, 0] = initial_acceleration
         else:
-            self.acceleration = np.zeros((2,), dtype=np.float64)
+            self.acceleration = np.zeros((2, 1), dtype=np.float64)
 
         if initial_omega is not None:
             self.omega = np.atleast_1d(np.asarray(initial_omega, dtype=np.float64))
@@ -95,7 +98,7 @@ class Roomba(SystemProtocol):
             self.alpha = np.zeros((1,), dtype=np.float64)
 
         # External
-        self.external_forces = np.zeros((2,), dtype=np.float64)
+        self.external_forces = np.zeros((2, 1), dtype=np.float64)
         self.external_torques = np.zeros((1,), dtype=np.float64)
 
     @classmethod
@@ -144,8 +147,10 @@ class Roomba(SystemProtocol):
         )
 
     def zeroed_out_external_forces_and_torques(self, time: np.float64) -> None:
-        self.external_forces[:] = 0.0
-        self.external_torques[:] = 0.0
+        _zeroed_out_external_forces_and_torques(
+            self.external_forces,
+            self.external_torques,
+        )
 
     def compute_internal_forces_and_torques(self, time: np.float64) -> None:
         pass
@@ -182,10 +187,10 @@ class Roomba(SystemProtocol):
         )
 
     def compute_translational_kinetic_energy(self) -> float:
-        return 0.5 * self.mass * np.dot(self.velocity, self.velocity)
+        return 0.5 * self.mass[0] * np.dot(self.velocity[:, 0], self.velocity[:, 0])
 
     def compute_rotational_kinetic_energy(self) -> float:
-        return 0.5 * self.inertia * self.omega[0] ** 2
+        return 0.5 * self.inertia[0] * self.omega[0] ** 2
 
     def compute_kinetic_energy(self) -> float:
         return (

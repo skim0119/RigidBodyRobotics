@@ -37,7 +37,7 @@ class TestExplicitEulerForward:
         """One step with constant force updates position and velocity."""
         stepper = ExplicitEulerForward()
         system = _make_roomba()
-        system.external_forces[:] = [1.0, 0.0]
+        system.external_forces[:, 0] = [1.0, 0.0]
         system.external_torques[:] = [0.0]
         time = np.float64(0.0)
         dt = np.float64(0.1)
@@ -45,8 +45,8 @@ class TestExplicitEulerForward:
         stepper.step_single_instance(system, time, dt)
 
         # a = F/m = 1, v_new = v + dt*a = 0.1, x_new = x + dt*v_new = 0.01 (explicit Euler)
-        np.testing.assert_allclose(system.velocity, [0.1, 0.0])
-        np.testing.assert_allclose(system.position, [0.01, 0.0])
+        np.testing.assert_allclose(system.velocity[:, 0], [0.1, 0.0])
+        np.testing.assert_allclose(system.position[:, 0], [0.01, 0.0])
 
 
 class TestSymplecticEulerForward:
@@ -67,7 +67,7 @@ class TestSymplecticEulerForward:
         """One step (dynamics then kinematics) updates state."""
         stepper = SymplecticEulerForward()
         system = _make_roomba()
-        system.external_forces[:] = [1.0, 0.0]
+        system.external_forces[:, 0] = [1.0, 0.0]
         system.external_torques[:] = [0.0]
         time = np.float64(0.0)
         dt = np.float64(0.1)
@@ -75,5 +75,5 @@ class TestSymplecticEulerForward:
         stepper.step_single_instance(system, time, dt)
 
         # Symplectic: v_new = v + dt*a = 0.1, then x_new = x + dt*v_new = 0.01
-        np.testing.assert_allclose(system.velocity, [0.1, 0.0])
-        np.testing.assert_allclose(system.position, [0.01, 0.0])
+        np.testing.assert_allclose(system.velocity[:, 0], [0.1, 0.0])
+        np.testing.assert_allclose(system.position[:, 0], [0.01, 0.0])
