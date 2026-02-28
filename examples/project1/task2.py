@@ -59,11 +59,11 @@ class EnergyCallBack(ea.CallBackBaseClass):
     def make_callback(self, system, time, current_step: int):
         if current_step % self.every == 0:
             self.callback_params["time"].append(time)
-            self.callback_params["position"].append(system.position.copy())
-            self.callback_params["direction"].append(system.direction.copy())
+            self.callback_params["position"].append(system.position[:, 0].copy())
+            self.callback_params["direction"].append(system.direction[:, 0].copy())
             # η_t = m * v_t (linear momentum), l_t = I * ω_t (angular momentum)
             H_t = system.compute_kinetic_energy()
-            V_t = self.K * np.dot(system.position, system.position)
+            V_t = self.K * np.dot(system.position[:, 0], system.position[:, 0])
             E_t = H_t + V_t
             self.callback_params["kinetic_energy"].append(H_t)
             self.callback_params["potential_energy"].append(V_t)

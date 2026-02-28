@@ -49,9 +49,9 @@ class Task3CallBack(ea.CallBackBaseClass):
         if current_step % self.every != 0:
             return
 
-        m = float(system.mass)
-        I = float(system.inertia)
-        v = system.velocity.copy()
+        m = float(system.mass[0])
+        I = float(system.inertia[0])
+        v = system.velocity[:, 0].copy()
         omega = float(system.omega[0])
 
         speed = float(np.linalg.norm(v))
@@ -60,9 +60,9 @@ class Task3CallBack(ea.CallBackBaseClass):
         H = 0.5 * m * (speed**2) + 0.5 * I * (omega**2)
 
         self.callback_params["time"].append(float(time))
-        self.callback_params["position"].append(system.position.copy())
-        self.callback_params["direction"].append(system.direction.copy())
-        self.callback_params["external_force"].append(system.external_forces.copy())
+        self.callback_params["position"].append(system.position[:, 0].copy())
+        self.callback_params["direction"].append(system.direction[:, 0].copy())
+        self.callback_params["external_force"].append(system.external_forces[:, 0].copy())
         self.callback_params["p_norm"].append(p_norm)
         self.callback_params["l"].append(l)
         self.callback_params["H"].append(H)
@@ -212,7 +212,7 @@ def main():
     # d2 is perpendicular to d1 (heading direction), rotated 90° counterclockwise
     R_90 = np.array([[0, -1], [1, 0]])  # 90° rotation matrix
     d2 = (R_90 @ dirs.T).T  # Perpendicular direction
-    width = float(robot.width)
+    width = float(robot.width[0])
     pos_left = pos + d2 * (width / 2.0)
     pos_right = pos - d2 * (width / 2.0)
 
@@ -221,7 +221,7 @@ def main():
     ax1.plot(pos[:, 0], pos[:, 1], "C0-", lw=1.5, label="Trajectory", zorder=3)
 
     # Robot body (circle of radius r) along the trajectory
-    r = float(robot.radius)
+    r = float(robot.radius[0])
     skip = max(1, len(pos) // 25)
     pos_skip = pos[::skip]
     for i, p in enumerate(pos_skip):
