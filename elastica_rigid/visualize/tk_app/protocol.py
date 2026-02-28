@@ -5,7 +5,6 @@ from typing import Protocol, Sequence
 
 from .characters import BaseCharacter2D
 
-
 COLOR_TARGET_MARKER = "#90be6d"
 COLOR_TARGET_HEADING = "#90be6d"
 COLOR_TRAIL = "#6c757d"

@@ -23,6 +23,7 @@ __all__ = [
     "TrianglePose2D",
     "ModelProtocol",
     "ObjectPose2D",
+    "RenderablePose2D",
     "PlotPanel",
     "PlotSeries",
     "TargetPose2D",
