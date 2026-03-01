@@ -15,10 +15,17 @@ def _update_rigid_SO2_kinematic_state(
 ) -> None:
     position += prefac * velocity
 
-    theta = prefac * omega[0]  # omega is (1,) array
-    c, s = np.cos(theta), np.sin(theta)
-    R = np.array([[c, -s], [s, c]])
-    direction[:] = R @ direction
+    # Supports both single-body (shape (2,1), omega shape (1,))
+    # and memory-block arrays (shape (2,N), omega shape (N,)).
+    n = direction.shape[1]
+    for k in range(n):
+        theta = prefac * omega[k]
+        c = np.cos(theta)
+        s = np.sin(theta)
+        x = direction[0, k]
+        y = direction[1, k]
+        direction[0, k] = c * x - s * y
+        direction[1, k] = s * x + c * y
 
 
 @numba.njit(cache=True)  # type: ignore

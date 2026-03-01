@@ -1,5 +1,6 @@
-from .body.roomba import Roomba
+from .body.roomba import Roomba, SE2RigidBody
 from .body.sphere import Sphere, SphereImplicit, SphereExact
+from .memory_block.memory_block_se2_body import MemoryBlockSE2Body
 from .timestepper.explicit_stepper import ExplicitEulerForward
 from .timestepper.symplectic_stepper import SymplecticEulerForward
 from .external_forces import (
