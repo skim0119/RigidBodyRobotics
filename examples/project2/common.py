@@ -139,3 +139,44 @@ def wrap_angle_array(theta: NDArray[np.float64]) -> NDArray[np.float64]:
     """Wrap angle array to [-pi, pi)."""
     return (theta + np.pi) % (2.0 * np.pi) - np.pi
 
+
+def wrap_angle(theta: float) -> float:
+    """Wrap an angle to [-pi, pi)."""
+    wrapped = (theta + np.pi) % (2.0 * np.pi) - np.pi
+    return float(wrapped)
+
+
+def heading_from_direction(direction: NDArray[np.float64]) -> float:
+    """Compute heading angle from a 2D direction vector."""
+    return float(np.arctan2(direction[1], direction[0]))
+
+
+def rmse(
+    estimate: NDArray[np.float64],
+    truth: NDArray[np.float64],
+    *,
+    angle: bool = False,
+) -> float:
+    """Compute root-mean-square error for scalar/vector trajectories."""
+    err = np.asarray(estimate) - np.asarray(truth)
+    if angle:
+        err = wrap_angle_array(err)
+    return float(np.sqrt(np.mean(np.square(err))))
+
+
+def log_true_state(log: DefaultDict[str, list], time: float, robot: er.Roomba) -> None:
+    """Append true robot state to a dict-of-lists log."""
+    position = robot.position[:, 0].copy()
+    direction = robot.direction[:, 0].copy()
+    theta = heading_from_direction(direction)
+    velocity = robot.velocity[:, 0].copy()
+    omega = float(robot.omega[0])
+    external_force = robot.external_forces[:, 0].copy()
+
+    log["time"].append(float(time))
+    log["x_true"].append(position)
+    log["d1_true"].append(direction)
+    log["theta_true"].append(theta)
+    log["v_true"].append(velocity)
+    log["omega_true"].append(omega)
+    log["external_force"].append(external_force)
