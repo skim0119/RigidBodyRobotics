@@ -243,7 +243,7 @@ def boundary_penetration_forces(
 
 class ConstantForce(NoForces):
     """
-    This class applies a constant gravitational force to the entire rod.
+    This class applies a constant thrust to the robot.
     """
 
     def __init__(
@@ -278,6 +278,67 @@ class ConstantForce(NoForces):
                 system.external_forces[:, 0],
                 system.external_torques,
             )
+
+
+class OpenLoopForce(NoForces):
+    """
+    This class applies a sequence of thrust on the robot
+    """
+
+    def __init__(
+        self,
+        time_intervals: NDArray[np.float64],
+        left_wheel_forces: NDArray[np.float64],
+        right_wheel_forces: NDArray[np.float64],
+    ) -> None:
+        """
+        Note, the integrity check for the time interval should be done outside.
+        In other word, it is assumed here that time intervals are in-order, and they
+        do not overlap.
+
+        Parameters
+        ----------
+        time_intervals : NDArray[np.float64]
+            (N, 2)
+        left_wheel_forces : NDArray[np.float64]
+            (N, 2)
+        right_wheel_forces : NDArray[np.float64]
+            (N, 2)
+        """
+        super().__init__()
+        self._time_intervals = np.asarray(time_intervals, dtype=np.float64)
+        self._left_wheel_forces = np.asarray(left_wheel_forces, dtype=np.float64)
+        self._right_wheel_forces = np.asarray(right_wheel_forces, dtype=np.float64)
+
+    def apply_forces(self, system, time: np.float64 = np.float64(0.0)) -> None:
+        left_force, right_force = self._get_thrust(
+            time,
+            self._time_intervals,
+            self._left_wheel_forces,
+            self._right_wheel_forces,
+        )
+        compute_wheel_forces_to_external(
+            system.direction[:, 0],
+            left_force,
+            right_force,
+            system.width[0],
+            system.external_forces[:, 0],
+            system.external_torques,
+        )
+
+    @staticmethod
+    @njit
+    def _get_thrust(
+        time: np.float64, time_intervals, left_wheel_forces, right_wheel_forces
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Return wheel thrust vectors active at `time`, else zero vectors."""
+        starts = time_intervals[:, 0]
+        ends = time_intervals[:, 1]
+        active = np.nonzero((starts <= time) & (time < ends))[0]
+        if active.size == 0:
+            return np.zeros(2, dtype=np.float64), np.zeros(2, dtype=np.float64)
+        idx = int(active[0])
+        return left_wheel_forces[idx], right_wheel_forces[idx]
 
 
 class PotentialFieldForce(NoForces):
